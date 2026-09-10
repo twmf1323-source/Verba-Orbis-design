@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verba Orbis · 詞的世界</title>
+  <meta name="description" content="輸入一個詞或概念，先鎖定義項，再對照中韓日與英德西法義。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;600&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <div class="workspace">
+      <main class="board-pane" id="main-pane" data-stage="idle">
+        <div id="empty-stage" class="empty-stage">
+          <p class="empty-kicker" data-i18n="app.title">Verba Orbis</p>
+          <h1 class="empty-title" data-i18n="hero.title">同一個意思，九種語言怎麼切</h1>
+          <p class="empty-desc" data-i18n="hero.desc">右側寫下詞語。先鎖一個義項，再看漢字圈與歐語怎麼切。</p>
+        </div>
+        <div id="sense-stage" class="sense-stage"></div>
+        <div id="zones" class="board">
+          <section id="zone-a" class="board-cjk-wrap" aria-label="漢字圈"></section>
+          <section id="zone-b" class="board-eu-wrap" aria-label="歐語"></section>
+        </div>
+      </main>
+
+      <aside class="side-rail" id="history-section">
+        <div class="rail-top">
+          <div class="brand">
+            <div class="brand-mark" aria-hidden="true"></div>
+            <div class="brand-text">
+              <span class="brand-title" data-i18n="app.title">Verba Orbis</span>
+              <span class="brand-sub" data-i18n="app.subtitle">詞的世界</span>
+            </div>
+          </div>
+          <button type="button" class="text-btn" id="settings-btn" data-i18n="nav.settings">設定</button>
+        </div>
+
+        <div class="rail-search">
+          <div class="query-line">
+            <input
+              id="query-input"
+              class="search-input"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              autocapitalize="off"
+              data-i18n-placeholder="search.placeholder"
+              placeholder="寫下詞語或概念…"
+            >
+            <button type="button" class="btn-primary" id="compare-btn" data-i18n="search.compare">比較</button>
+          </div>
+          <div id="lang-chips" class="lang-chips" role="toolbar" aria-label="來源語"></div>
+          <p id="lang-hint" class="lang-hint hidden"></p>
+          <div id="status-bar" class="status-bar" role="status"></div>
+          <div id="sense-dock" class="sense-dock"></div>
+        </div>
+
+        <div class="rail-log">
+          <div class="history-head">
+            <h2 data-i18n="history.title">查詢紀錄</h2>
+            <button type="button" class="text-btn danger" id="clear-history" data-i18n="history.clear">清空</button>
+          </div>
+          <input
+            id="history-filter"
+            class="history-filter"
+            type="search"
+            data-i18n-placeholder="history.filter"
+            placeholder="篩選單字…"
+          >
+          <div id="history-list" class="history-list"></div>
+        </div>
+      </aside>
+    </div>
+  </div>
+
+  <div id="settings-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
+    <div class="modal">
+      <div class="modal-head">
+        <h2 data-i18n="settings.title">設定</h2>
+        <button type="button" class="text-btn" id="settings-close">關閉</button>
+      </div>
+
+      <div class="modal-section" style="margin-top:0;padding-top:0;border-top:none">
+        <h3 data-i18n="settings.ai">AI（自備金鑰）</h3>
+        <div class="field">
+          <label data-i18n="settings.apiKey">API Key</label>
+          <input id="setting-api-key" type="password" autocomplete="off" placeholder="xai-…">
+          <div class="hint" data-i18n="settings.apiKeyHint">僅存在本機瀏覽器，不會上傳。</div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" id="btn-copy-radix-key" data-i18n="settings.copyRadixKey">從 Radix Multi 複製金鑰</button>
+        </div>
+        <div class="field">
+          <label data-i18n="settings.baseUrl">Base URL</label>
+          <input id="setting-base-url" type="url" placeholder="https://api.x.ai/v1">
+        </div>
+        <div class="field">
+          <label data-i18n="settings.model">Model</label>
+          <input id="setting-model" type="text" placeholder="grok-4.6 或 grok-4.5">
+          <div class="hint">xAI 常用：<code>grok-4.6</code>、<code>grok-4.5</code>。以 console.x.ai 為準。</div>
+        </div>
+        <div class="field">
+          <label data-i18n="settings.reasoning">推理強度</label>
+          <select id="setting-reasoning">
+            <option value="low">低（本站預設）</option>
+            <option value="medium">中</option>
+            <option value="high">高</option>
+            <option value="xhigh">極高</option>
+          </select>
+          <div class="hint" data-i18n="settings.reasoningHint">Grok 4.6 預設高推理；本站預設低，以免筆記又慢又貴。</div>
+        </div>
+        <div class="field">
+          <label data-i18n="settings.ttsVoice">朗讀聲線（xAI TTS）</label>
+          <input id="setting-tts-voice" type="text" placeholder="helios">
+          <div class="hint" data-i18n="settings.ttsVoiceHint">點「朗讀」時產生語音；同字會快取。</div>
+        </div>
+        <div class="field">
+          <label data-i18n="settings.radixUrl">Radix Multi 網址（可選）</label>
+          <input id="setting-radix-url" type="url" placeholder="https://… 或相對路徑">
+          <div class="hint" data-i18n="settings.radixUrlHint">填了之後，歐語／韓日卡片可跳去拆形態。第一版不改 Radix。</div>
+        </div>
+      </div>
+
+      <div class="modal-section">
+        <h3 data-i18n="settings.data">資料</h3>
+        <p class="hint" data-i18n="settings.historyWarn">紀錄只存在本機，用久了可能變大。可匯出後再清空。</p>
+        <label class="check-row">
+          <input type="checkbox" id="setting-include-key">
+          <span data-i18n="settings.includeKey">匯出時包含 API Key（預設關）</span>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" id="btn-export" data-i18n="settings.export">匯出 JSON</button>
+          <button type="button" class="btn-ghost" id="btn-import" data-i18n="settings.import">匯入 JSON</button>
+          <input id="import-file" type="file" accept="application/json,.json" class="hidden">
+        </div>
+      </div>
+
+      <div class="modal-actions" style="margin-top:1.25rem">
+        <button type="button" class="btn-primary" id="save-settings" style="height:2.5rem">
+          <span data-i18n="settings.save">儲存設定</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="crop-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="crop-title">
+    <div class="modal crop-sheet">
+      <div class="modal-head">
+        <h2 id="crop-title">裁切背景</h2>
+        <button type="button" class="text-btn" id="crop-cancel" data-i18n="crop.cancel">取消</button>
+      </div>
+      <p class="crop-hint" id="crop-hint" data-i18n="crop.hint">拖曳選框移動，角落拖曳縮放。比例已對齊這張卡。</p>
+      <div class="crop-stage" id="crop-stage">
+        <img id="crop-image" alt="">
+        <div class="crop-box" id="crop-box" hidden>
+          <i data-handle="nw"></i>
+          <i data-handle="ne"></i>
+          <i data-handle="sw"></i>
+          <i data-handle="se"></i>
+        </div>
+      </div>
+      <div class="modal-actions crop-actions">
+        <button type="button" class="btn-ghost" id="crop-clear" data-i18n="crop.clear">恢復預設</button>
+        <button type="button" class="btn-primary" id="crop-apply" data-i18n="crop.apply">套用此裁切</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="js/i18n.js"></script>
+  <script src="js/schema.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/prompts.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/tts.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/crop.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

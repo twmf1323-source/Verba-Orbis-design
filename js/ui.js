@@ -1,12 +1,6 @@
-/**
- * Verba Orbis UI renderers (file:// safe)
- */
 (function (global) {
-  const VO = (global.VerbaOrbis = global.VerbaOrbis || {});
-
-  function t(key) {
-    return VO.i18n.t(key);
-  }
+  const VA = (global.VerbaAthanor = global.VerbaAthanor || {});
+  const t = (k) => VA.i18n.t(k);
 
   function esc(s) {
     return String(s ?? '')
@@ -16,514 +10,662 @@
       .replace(/"/g, '&quot;');
   }
 
-  function setStatus(el, message, kind) {
-    if (!el) return;
-    el.className = 'status-bar' + (kind ? ` ${kind}` : '');
-    el.textContent = message || '';
+  function eraDefault() {
+    return VA.langs?.current?.()?.eraDefault || 'Fr';
   }
 
-  function setLoading(el, loading, message) {
-    if (!el) return;
-    el.className = 'status-bar';
-    el.textContent = '';
-    if (loading) {
-      const spin = document.createElement('span');
-      spin.className = 'spinner';
-      el.appendChild(spin);
-      el.appendChild(document.createTextNode(message || t('status.listing')));
-    } else if (message) {
-      el.textContent = message;
+  function speakAttrs(text, era) {
+    return `data-speak="${esc(text)}" data-speak-era="${esc(era || eraDefault())}"`;
+  }
+
+  function renderNode(node) {
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.setAttribute('aria-label', `朗讀 ${node.form || ''}`);
+    if (node.type === 'word') {
+      const zh = node.analysis?.glossZh || '';
+      el.innerHTML = `
+        <span class="node-kicker">整詞 · ♪</span>
+        <span class="node-form">${esc(node.form)}</span>
+        <span class="node-sub">${esc(zh || node.ipa || '')}${!zh && node.pos ? ' · ' + esc(node.pos) : zh && node.pos ? ' · ' + esc(node.pos) : ''}</span>
+      `;
+    } else if (node.type === 'morph') {
+      const meta = VA.schema.kindMeta(node.kind);
+      const kicker = node.fromCabinet ? `${esc(t('inspector.cabinet'))} · ♪` : `${esc(meta.zh)} · ♪`;
+      const zh = VA.schema.hasZh?.(node.gloss) ? node.gloss : node.morph?.meaningZh || '';
+      el.innerHTML = `
+        <span class="node-principle">${kicker}</span>
+        <span class="node-form">${esc(node.form)}</span>
+        <span class="node-sub">${esc(zh || node.morph?.meaningFr || meta.zh)}</span>
+      `;
+    } else if (node.type === 'root') {
+      const via = VA.schema.viaLabel(node.via);
+      el.innerHTML = `
+        <span class="node-kicker">${esc(node.era || '原質')}${via ? ' · ' + esc(via) : ''} · ♪</span>
+        <span class="node-form">${esc(node.form)}</span>
+        <span class="node-sub">${esc(node.gloss || '')}</span>
+      `;
+    } else {
+      el.innerHTML = `
+        <span class="node-kicker">${esc(node.rel || '派生')} · ♪</span>
+        <span class="node-form">${esc(node.form)}</span>
+        <span class="node-sub">${esc(node.gloss || '')}</span>
+      `;
     }
+    return el;
   }
 
-  const CHIP_LANGS = [
-    { id: 'auto', labelKey: 'lang.auto' },
-    { id: 'zh', labelKey: 'lang.zh' },
-    { id: 'ko', labelKey: 'lang.ko' },
-    { id: 'ja', labelKey: 'lang.ja' },
-    { id: 'en', labelKey: 'lang.en' },
-    { id: 'de', labelKey: 'lang.de' },
-    { id: 'es', labelKey: 'lang.es' },
-    { id: 'fr', labelKey: 'lang.fr' },
-    { id: 'it', labelKey: 'lang.it' },
-    { id: 'la', labelKey: 'lang.la' },
-  ];
+  function attestBlock(analysis) {
+    const view = VA.schema.formatFirstAttested(analysis?.firstAttested);
+    if (!view) return '';
+    const era = analysis.firstAttested?.era || '';
+    const cert = view.certLabel
+      ? `<span class="path-cert cert-${esc(view.certainty)}">${esc(view.certLabel)}</span>`
+      : '';
+    return `
+      <div class="insp-attest">
+        <p class="insp-label">${esc(t('inspector.attested'))}</p>
+        ${view.head ? `<p class="attest-when"><span>${esc(view.head)}</span>${cert}</p>` : cert ? `<p class="attest-when">${cert}</p>` : ''}
+        ${view.whereZh ? `<p class="attest-where">${esc(view.whereZh)}</p>` : ''}
+        ${
+          view.form
+            ? `<p class="attest-form">形式 <button type="button" class="path-form" ${speakAttrs(view.form, era)}>${esc(view.form)}</button></p>`
+            : ''
+        }
+        ${view.cite ? `<p class="attest-cite">${esc(t('inspector.attestedWork'))} ${esc(view.cite)}</p>` : ''}
+        ${view.sourceZh ? `<p class="attest-src">${esc(t('inspector.attestedLex'))} ${esc(view.sourceZh)}</p>` : ''}
+      </div>`;
+  }
 
-  const CHIP_ROWS = [
-    { cls: 'chip-row-cjk', ids: ['auto', 'zh', 'ko', 'ja'] },
-    { cls: 'chip-row-eu', ids: ['en', 'de', 'es', 'fr', 'it', 'la'] },
-  ];
+  function pathColumn(path) {
+    if (!path?.length) return '';
+    const steps = path
+      .map((p, i) => {
+        const eraName = VA.schema.originLabel(p.era) || p.era;
+        const via = VA.schema.viaLabel(p.via);
+        const cert = VA.schema.certaintyLabel(p.certainty);
+        return `
+      <li class="path-step" style="--i:${i}">
+        <span class="path-era">
+          ${esc(eraName)}
+          ${via ? `<span class="path-via">${esc(via)}</span>` : ''}
+          ${cert ? `<span class="path-cert cert-${esc(p.certainty || '')}">${esc(cert)}</span>` : ''}
+        </span>
+        <button type="button" class="path-form" ${speakAttrs(p.form, p.era)}>${esc(p.form)}</button>
+        <span class="path-gloss">${esc(p.glossZh || '')}</span>
+        ${p.noteZh ? `<span class="path-note">${esc(p.noteZh)}</span>` : ''}
+      </li>`;
+      })
+      .join('');
+    return `<ol class="path-col">${steps}</ol>`;
+  }
 
-  function renderLangChips(el, { selected, onSelect }) {
+  function morphRoster(morphs) {
+    if (!morphs?.length) return '';
+    const rows = morphs
+      .map((m) => {
+        const meta = VA.schema.kindMeta(m.kind);
+        const gloss = VA.schema.hasZh?.(m.meaningZh) ? m.meaningZh : m.meaningZh || m.meaningFr || '（尚無中文註釋）';
+        const origin = [VA.schema.originLabel(m.origin), m.originForm].filter(Boolean).join(' ');
+        const lineage = m.originPath || VA.schema.formatOriginPath(VA.schema.lineageFromMorpheme(m));
+        return `
+        <li class="roster-row">
+          <button type="button" class="roster-form" ${speakAttrs(m.surface, m.origin)}>${esc(m.surface)}</button>
+          <span class="roster-kind">${esc(meta.zh)}</span>
+          <span class="roster-gloss">${esc(gloss)}</span>
+          ${m.meaningFr ? `<span class="roster-fr">${esc(m.meaningFr)}</span>` : ''}
+          ${origin ? `<span class="roster-origin">${esc(origin)}</span>` : ''}
+          ${lineage ? `<span class="roster-lineage">${esc(lineage)}</span>` : ''}
+          ${m.noteZh ? `<span class="roster-note">${esc(m.noteZh)}</span>` : ''}
+        </li>`;
+      })
+      .join('');
+    return `<p class="insp-label">語素註釋</p><ul class="morph-roster">${rows}</ul>`;
+  }
+
+  function morphOps(disabled) {
+    const d = disabled ? 'disabled' : '';
+    return `
+      <div class="op-grid">
+        <button type="button" class="op-btn" data-op="distill" ${d}>
+          <span class="op-alch">🜄</span>
+          <span class="op-name">${esc(t('op.distill'))}</span>
+          <span class="op-hint">${esc(t('op.distillHint'))}</span>
+        </button>
+        <button type="button" class="op-btn" data-op="derive" ${d}>
+          <span class="op-alch">🜂</span>
+          <span class="op-name">${esc(t('op.derive'))}</span>
+          <span class="op-hint">${esc(t('op.deriveHint'))}</span>
+        </button>
+        <button type="button" class="op-btn" data-op="compound" ${d}>
+          <span class="op-alch">🜃</span>
+          <span class="op-name">${esc(t('op.compound'))}</span>
+          <span class="op-hint">${esc(t('op.compoundHint'))}</span>
+        </button>
+      </div>
+      <button type="button" class="op-btn op-single" data-op="transmute">
+        <span class="op-alch">🜁</span>
+        <span class="op-name">${esc(t('op.transmute'))}</span>
+        <span class="op-hint">${esc(t('op.transmuteMorphHint'))}</span>
+      </button>`;
+  }
+
+  function resplitBtn() {
+    return `
+      <button type="button" class="op-btn op-single" data-op="resplit">
+        <span class="op-alch">🜍</span>
+        <span class="op-name">${esc(t('op.resplit'))}</span>
+        <span class="op-hint">${esc(t('op.resplitHint'))}</span>
+      </button>`;
+  }
+
+  function inspectorRoot() {
+    return document.getElementById('inspector');
+  }
+
+  function inspectorBox() {
+    return document.getElementById('inspector-body') || document.getElementById('inspector');
+  }
+
+  function setSheetOpen(on) {
+    const root = inspectorRoot();
+    if (!root) return;
+    root.classList.toggle('is-open', Boolean(on));
+    const grab = document.getElementById('insp-grab');
+    if (grab) grab.setAttribute('aria-expanded', on ? 'true' : 'false');
+    window.dispatchEvent(new Event('resize'));
+  }
+
+  function fillSheetTabs(tabs, active) {
+    const el = document.getElementById('sheet-tabs');
     if (!el) return;
-    const byId = {};
-    CHIP_LANGS.forEach((c) => {
-      byId[c.id] = c;
-    });
-    el.innerHTML = `<div class="chip-board">${CHIP_ROWS.map((row) => {
-      return `<div class="chip-row ${row.cls}">${row.ids
-        .map((id) => {
-          const c = byId[id];
-          if (!c) return '';
-          const active = selected === id ? ' active' : '';
-          const kind = id === 'auto' ? ' chip-auto' : '';
-          return `<button type="button" class="chip${kind}${active}" data-lang="${esc(id)}">${esc(t(c.labelKey))}</button>`;
-        })
-        .join('')}</div>`;
-    }).join('')}</div>`;
-    el.querySelectorAll('[data-lang]').forEach((btn) => {
-      btn.addEventListener('click', () => onSelect && onSelect(btn.getAttribute('data-lang')));
-    });
-  }
-
-  function posLabel(pos) {
-    return String(pos || '');
-  }
-
-  function renderSensePicker(el, candidates, { onPick, highlightKey, single } = {}) {
-    if (!el) return;
-    const list = Array.isArray(candidates) ? candidates : [];
+    const list = (tabs || []).filter((tab) => tab && tab.id);
     if (!list.length) {
       el.innerHTML = '';
+      el.hidden = true;
       return;
     }
-    const btnLabel = single || list.length === 1 ? t('picker.confirmOne') : t('picker.confirm');
-    el.innerHTML = `
-      <div class="picker-head">${esc(t('picker.title'))}</div>
-      <div class="picker-grid">
-        ${list
-          .map((c, i) => {
-            const hi = highlightKey && c.senseKey === highlightKey ? ' highlight' : '';
-            return `<article class="sense-card${hi}" data-idx="${i}" tabindex="0">
-              <div class="sense-meta">${esc(c.id || 's' + (i + 1))} · ${esc(posLabel(c.pos))} · ${esc(c.domain || '')}</div>
-              <div class="sense-gloss">${esc(c.glossZh)}</div>
-              ${c.note ? `<div class="sense-note">${esc(c.note)}</div>` : ''}
-              <button type="button" class="btn-primary sense-pick" data-idx="${i}">${esc(btnLabel)}</button>
-            </article>`;
-          })
-          .join('')}
-      </div>`;
-    el.querySelectorAll('.sense-pick').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const idx = Number(btn.getAttribute('data-idx'));
-        onPick && onPick(list[idx]);
-      });
-    });
-    el.querySelectorAll('.sense-card').forEach((card) => {
-      card.addEventListener('click', () => {
-        const idx = Number(card.getAttribute('data-idx'));
-        onPick && onPick(list[idx]);
-      });
-      card.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-          const idx = Number(card.getAttribute('data-idx'));
-          onPick && onPick(list[idx]);
-        }
-      });
-    });
-  }
-
-  function renderLockedChip(el, sense, { onChange, onRecompare } = {}) {
-    if (!el) return;
-    if (!sense) {
-      el.innerHTML = '';
-      return;
-    }
-    el.innerHTML = `
-      <div class="lock-chip">
-        <div class="lock-copy">
-          <span class="lock-kicker">${esc(t('lock.locked'))}${sense.pos ? ` · ${esc(sense.pos)}` : ''}</span>
-          <span class="lock-gloss">${esc(sense.glossZh || '')}</span>
-        </div>
-        <div class="lock-actions">
-          <button type="button" class="btn-ghost" id="btn-change-sense">${esc(t('lock.change'))}</button>
-          <button type="button" class="btn-ghost" id="btn-recompare">${esc(t('lock.recompare'))}</button>
-        </div>
-      </div>`;
-    el.querySelector('#btn-change-sense')?.addEventListener('click', () => onChange && onChange());
-    el.querySelector('#btn-recompare')?.addEventListener('click', () => onRecompare && onRecompare());
-  }
-
-  function sinoLabel(card) {
-    if (card.lang === 'ko' && card.sinoClass) {
-      return { hanja: '한자어', native: '고유어', loan: '외래어', mixed: '혼합' }[card.sinoClass] || card.sinoClass;
-    }
-    if (card.lang === 'ja' && card.jpClass) {
-      const cls = { kango: '漢語', wago: '和語', gairaigo: '外来語', mixed: '混合' }[card.jpClass] || card.jpClass;
-      const rd = { on: '音讀', kun: '訓讀', mixed: '音訓', na: '' }[card.jpReadingType] || '';
-      return rd ? `${cls} · ${rd}` : cls;
-    }
-    return '';
-  }
-
-  function genderNote(p) {
-    if (!p) return '';
-    const bits = [];
-    if (p.gender) bits.push(p.gender);
-    if (p.plural) bits.push('pl. ' + p.plural);
-    return bits.join(' · ');
-  }
-
-  function firstSentence(s, max) {
-    const text = String(s || '').trim();
-    if (!text) return '';
-    const m = text.match(/^[\s\S]{1,90}?[。！？.!?]/);
-    let cut = (m ? m[0] : text).trim();
-    const cap = max || 72;
-    if (cut.length > cap) cut = cut.slice(0, cap) + '…';
-    return cut;
-  }
-
-  function isBlankHeadword(s) {
-    const text = String(s || '').trim();
-    return !text || /^[—–−\-]+$/.test(text);
-  }
-
-  function displayHeadword(card) {
-    const p = (card && card.primary) || {};
-    if (!isBlankHeadword(p.headword)) return p.headword;
-    const alt = (card.alternatives || []).find((a) => a && !isBlankHeadword(a.headword));
-    if (alt) return alt.headword;
-    if (!isBlankHeadword(p.plural)) return p.plural;
-    return '';
-  }
-
-  function isExactEquiv(code) {
-    return String(code || '') === 'exact';
-  }
-
-  function toriiSvg(extraClass) {
-    return `<svg class="${extraClass || 'lang-mark'}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path fill="currentColor" d="M1.2 6.15 3.45 4.2h17.1L22.8 6.15v1.4H1.2V6.15z"/>
-      <rect x="3.35" y="7.7" width="17.3" height="1.15" rx="0.2"/>
-      <rect x="6.2" y="7.7" width="2.05" height="13.5" rx="0.25"/>
-      <rect x="15.75" y="7.7" width="2.05" height="13.5" rx="0.25"/>
-      <rect x="5.15" y="13.2" width="13.7" height="1.4" rx="0.2"/>
-    </svg>`;
-  }
-
-  function langMark(lang) {
-    if (lang === 'ja') return toriiSvg('lang-mark');
-    return '';
-  }
-
-  function renderLangCard(card, { radixUrl } = {}) {
-    if (!card) return '';
-    const p = card.primary || {};
-    const cls = sinoLabel(card);
-    const href = radixUrl || '';
-    const hanja = p.hanja ? `<span class="hanja">${esc(p.hanja)}</span>` : '';
-    const euIpaLangs = { en: 1, de: 1, es: 1, fr: 1, it: 1 };
-    const rawIpa = String(p.ipa || (euIpaLangs[card.lang] ? p.reading : '') || '')
-      .trim()
-      .replace(/^\/+|\/+$/g, '');
-    const readingText = euIpaLangs[card.lang] ? rawIpa : String(p.reading || '').trim();
-    const reading = readingText ? `<div class="card-reading">/${esc(readingText)}/</div>` : '';
-    const extraBits = [
-      ...(cls ? cls.split(' · ').filter(Boolean) : []),
-      p.pos,
-      p.register && p.register !== '中性' ? p.register : '',
-      p.gender,
-      p.plural ? 'pl. ' + p.plural : '',
-    ].filter(Boolean);
-    const extraPills = extraBits
-      .map((bit) => `<span class="meta-pill">${esc(bit)}</span>`)
+    const current = list.some((tab) => tab.id === active) ? active : list[0].id;
+    el.hidden = false;
+    el.innerHTML = list
+      .map(
+        (tab) =>
+          `<button type="button" role="tab" data-sheet-tab="${esc(tab.id)}" aria-selected="${tab.id === current ? 'true' : 'false'}" class="${tab.id === current ? 'is-on' : ''}">${esc(tab.label)}</button>`
+      )
       .join('');
-    const row = (label, body) =>
-      body ? `<div class="card-row"><span class="k">${esc(label)}</span><div class="v">${body}</div></div>` : '';
-    const radixBtn = href
-      ? `<a class="radix-link" href="${esc(href)}" target="_blank" rel="noopener">${esc(t('card.radix'))}</a>`
-      : '';
-    const gloss = String((p && p.glossZh) || '').trim();
-    const equivNote =
-      !isExactEquiv(card.equiv) && card.caveatsZh ? String(card.caveatsZh).trim() : '';
-    const etym = String(card.etymologyZh || '').trim();
-    const hub = card.lang === 'la' ? ' hub' : '';
-    const hw = displayHeadword(card);
-    const langName = t('langFull.' + card.lang);
-    const speakBtn =
-      card.lang !== 'la' && hw && !isBlankHeadword(hw)
-        ? `<button type="button" class="speak-btn" data-action="speak" data-word="${esc(hw)}" data-lang="${esc(card.lang || '')}" title="${esc(t('card.speak'))}" aria-label="${esc(t('card.speak'))}"><span class="speak-icon" aria-hidden="true"></span><span class="speak-label">${esc(t('card.speak'))}</span></button>`
-        : '';
-    const frontLabel = `${hw || t('card.noHeadword')}，${langName}。${t('card.flipHint')}`;
-    const mark = langMark(card.lang);
-    return `<article class="lang-card lang-${esc(card.lang || '')}${hub}" data-lang="${esc(card.lang || '')}" tabindex="0" aria-expanded="false" aria-label="${esc(frontLabel)}">
-      <div class="card-flip">
-        <div class="card-face card-front">
-          <div class="card-front-top">
-            <span class="lang-kicker">${mark}<span class="lang-name">${esc(langName)}</span></span>
-            ${speakBtn}
-          </div>
-          <div class="card-front-inner">
-            <div class="card-front-word">
-              <span class="hw">${esc(hw || t('card.noHeadword'))}</span>
-              ${hanja}
-            </div>
-            ${reading}
-            ${extraPills ? `<div class="card-front-meta">${extraPills}</div>` : ''}
-          </div>
-        </div>
-        <div class="card-face card-back">
-          <div class="card-back-inner">
-            <span class="lang-name">${esc(langName)}</span>
-            ${row(t('card.core'), gloss ? esc(gloss) : '')}
-            ${row(t('card.caveat'), equivNote ? esc(equivNote) : '')}
-            ${row(t('card.etym'), etym ? esc(etym) : '')}
-            ${radixBtn ? `<div class="card-foot">${radixBtn}</div>` : ''}
-          </div>
-        </div>
-      </div>
-    </article>`;
+    showSheetTab(current);
   }
 
-  function isFlippableCard(card) {
-    return !!(
-      card &&
-      card.classList.contains('lang-card') &&
-      !card.classList.contains('empty-slot') &&
-      !card.classList.contains('skeleton')
+  function showSheetTab(id) {
+    const root = inspectorRoot();
+    const tab = String(id || 'word');
+    root?.setAttribute('data-sheet', tab);
+    document.querySelectorAll('#sheet-tabs [data-sheet-tab]').forEach((btn) => {
+      const on = btn.getAttribute('data-sheet-tab') === tab;
+      btn.classList.toggle('is-on', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+  }
+
+  function setRailOpen(on) {
+    const app = document.getElementById('app');
+    const scrim = document.getElementById('rail-scrim');
+    const btn = document.getElementById('rail-toggle');
+    const open = Boolean(on);
+    app?.classList.toggle('rail-open', open);
+    if (scrim) scrim.hidden = !open;
+    if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+
+  function renderGuide() {
+    const root = inspectorRoot();
+    const box = inspectorBox();
+    const p = VA.langs?.current?.() || {};
+    const lang = [p.label?.zh, p.label?.native].filter(Boolean).join(' · ');
+    root?.classList.add('is-guide');
+    root?.classList.remove('hidden', 'is-open');
+    root?.removeAttribute('data-sheet');
+    fillSheetTabs([]);
+    setSheetOpen(false);
+    if (box) box.innerHTML = `
+      <div class="insp-head">
+        <p class="insp-kicker">${esc(t('guide.kicker'))}</p>
+        <h2>${esc(t('guide.title'))}</h2>
+        <p class="insp-meta">${esc(lang)}</p>
+        <p class="insp-gloss">${esc(t('guide.lead'))}</p>
+      </div>
+      <ol class="guide-steps">
+        <li><b>1 · ${esc(t('guide.s1'))}</b><span>${esc(t('guide.s1d'))}</span></li>
+        <li><b>2 · ${esc(t('guide.s2'))}</b><span>${esc(t('guide.s2d'))}</span></li>
+        <li><b>3 · ${esc(t('guide.s3'))}</b><span>${esc(t('guide.s3d'))}</span></li>
+        <li><b>4 · ${esc(t('guide.s4'))}</b><span>${esc(t('guide.s4d'))}</span></li>
+        <li><b>5 · ${esc(t('guide.s5'))}</b><span>${esc(t('guide.s5d'))}</span></li>
+        <li><b>6 · ${esc(t('guide.s6'))}</b><span>${esc(t('guide.s6d'))}</span></li>
+      </ol>
+    `;
+  }
+
+  function renderInspector(node, { expanding } = {}) {
+    const root = inspectorRoot();
+    const box = inspectorBox();
+    if (!node) {
+      renderGuide();
+      return;
+    }
+    root?.classList.remove('hidden', 'is-guide');
+    if (!box) return;
+    if (node.type === 'word') {
+      const a = node.analysis || {};
+      box.innerHTML = `
+        <div class="insp-head">
+          <p class="insp-kicker">${esc(t('inspector.word'))}</p>
+          <h2><button type="button" class="speak-word" ${speakAttrs(a.lemma || node.form, eraDefault())}>${esc(a.lemma || node.form)}</button></h2>
+          <p class="insp-meta">${esc(a.ipa || '')} · ${esc(a.pos || '')}${a.gender ? ' · ' + esc(a.gender) : ''}</p>
+          <p class="insp-gloss">${esc(a.glossZh || '（尚無中文釋義）')}</p>
+          <p class="insp-fr">${esc(a.glossFr)}</p>
+        </div>
+        <div data-sheet-pane="word">
+          ${attestBlock(a)}
+          ${a.alchNoteZh ? `<p class="insp-note">${esc(a.alchNoteZh)}</p>` : ''}
+          ${
+            a.example?.fr
+              ? `<blockquote class="insp-ex"><button type="button" class="speak-line" ${speakAttrs(a.example.fr, eraDefault())}>${esc(a.example.fr)}</button><small>${esc(a.example.zh)}</small></blockquote>`
+              : ''
+          }
+        </div>
+        <div data-sheet-pane="morphs">
+          ${morphRoster(a.morphemes)}
+          ${VA.schema.isAtomicAnalysis(a) ? resplitBtn() : ''}
+        </div>
+        <div data-sheet-pane="path">
+          <p class="insp-label">${esc(t('inspector.path'))}</p>
+          ${pathColumn(a.path)}
+          <p class="ai-badge">${esc(t('ai.badge'))}</p>
+        </div>
+      `;
+      fillSheetTabs(
+        [
+          { id: 'word', label: t('sheet.tabWord') },
+          a.morphemes?.length ? { id: 'morphs', label: t('sheet.tabMorphs') } : null,
+          a.path?.length ? { id: 'path', label: t('sheet.tabPath') } : null,
+        ],
+        'word'
+      );
+      return;
+    }
+    if (node.type === 'morph') {
+      const m = node.morph || {};
+      const meta = VA.schema.kindMeta(m.kind);
+      const lineage = VA.schema.lineageFromMorpheme(m, node.analysis?.path);
+      box.innerHTML = `
+        <div class="insp-head">
+          <p class="insp-kicker">${esc(t('inspector.morph'))} · ${esc(meta.zh)}</p>
+          <h2><button type="button" class="speak-word" ${speakAttrs(m.surface, m.origin)}>${esc(m.surface)}</button></h2>
+          <p class="insp-meta">${esc(VA.schema.originLabel(m.origin))} ${esc(m.originForm || '')}</p>
+          <p class="insp-gloss">${esc(m.meaningZh || '（尚無中文註釋）')}</p>
+          <p class="insp-fr">${esc(m.meaningFr)}</p>
+        </div>
+        <div data-sheet-pane="word">
+          ${m.noteZh ? `<p class="insp-note">${esc(m.noteZh)}</p>` : ''}
+        </div>
+        <div data-sheet-pane="morphs">
+          ${morphOps(expanding)}
+          ${VA.schema.isAtomicAnalysis(node.analysis || {}) ? resplitBtn() : ''}
+        </div>
+        <div data-sheet-pane="path">
+          <p class="insp-label">${esc(t('inspector.lineage'))}</p>
+          ${pathColumn(lineage)}
+        </div>
+      `;
+      fillSheetTabs(
+        [
+          { id: 'word', label: t('sheet.tabWord') },
+          { id: 'morphs', label: t('sheet.tabOps') },
+          lineage?.length ? { id: 'path', label: t('sheet.tabPath') } : null,
+        ],
+        'word'
+      );
+      return;
+    }
+    if (node.type === 'root') {
+      box.innerHTML = `
+        <div class="insp-head">
+          <p class="insp-kicker">${esc(t('inspector.root'))}</p>
+          <h2><button type="button" class="speak-word" ${speakAttrs(node.form, node.era)}>${esc(node.form)}</button></h2>
+          <p class="insp-meta">${esc(VA.schema.originLabel(node.era) || node.era || '')}${VA.schema.viaLabel(node.via) ? ' · ' + esc(VA.schema.viaLabel(node.via)) : ''}</p>
+          <p class="insp-gloss">${esc(node.gloss || '')}</p>
+        </div>
+        <div data-sheet-pane="word">
+          ${node.link ? `<p class="insp-note">${esc(node.link)}</p>` : ''}
+        </div>
+        <div data-sheet-pane="morphs">
+          <button type="button" class="op-btn op-single" data-op="transmute">
+            <span class="op-name">${esc(t('op.transmute'))}</span>
+            <span class="op-hint">${esc(VA.langs?.current?.()?.modernWordHint || t('op.transmuteHint'))}</span>
+          </button>
+        </div>
+      `;
+      fillSheetTabs(
+        [
+          { id: 'word', label: t('sheet.tabWord') },
+          { id: 'morphs', label: t('sheet.tabOps') },
+        ],
+        'word'
+      );
+      return;
+    }
+    box.innerHTML = `
+      <div class="insp-head">
+        <p class="insp-kicker">${esc(t('inspector.family'))}</p>
+        <h2><button type="button" class="speak-word" ${speakAttrs(node.form, node.era || eraDefault())}>${esc(node.form)}</button></h2>
+        <p class="insp-meta">${esc(node.pos || '')}${node.era ? ' · ' + esc(node.era) : ''}</p>
+        <p class="insp-gloss">${esc(node.gloss || '')}</p>
+      </div>
+      <div data-sheet-pane="word">
+        <p class="insp-note">${esc(node.link || '')}</p>
+      </div>
+      <div data-sheet-pane="morphs">
+        <button type="button" class="op-btn op-single" data-op="transmute">
+          <span class="op-name">${esc(t('op.transmute'))}</span>
+          <span class="op-hint">${esc(t('op.transmuteHint'))}</span>
+        </button>
+      </div>
+    `;
+    fillSheetTabs(
+      [
+        { id: 'word', label: t('sheet.tabWord') },
+        { id: 'morphs', label: t('sheet.tabOps') },
+      ],
+      'word'
     );
   }
 
-  function toggleCardFlip(card, force) {
-    if (!isFlippableCard(card)) return;
-    const next = typeof force === 'boolean' ? force : !card.classList.contains('is-flipped');
-    const board = card.closest('.board') || card.closest('.board-pane') || document;
-    board.querySelectorAll('.lang-card.is-flipped').forEach((el) => {
-      if (el !== card) {
-        el.classList.remove('is-flipped');
-        el.setAttribute('aria-expanded', 'false');
-      }
-    });
-    card.classList.toggle('is-flipped', next);
-    card.setAttribute('aria-expanded', next ? 'true' : 'false');
-  }
-
-  function renderCognateNet(net) {
-    if (!net) return '';
-    const pills = (arr) =>
-      (arr || []).map((x) => `<span class="net-pill">${esc(x)}</span>`).join('');
-    const traps = (net.traps || [])
-      .map((tr) => `<li><strong>${esc(tr.form)}</strong> — ${esc(tr.noteZh)}</li>`)
-      .join('');
-    const lead = firstSentence(net.summaryZh, 90);
-    const hasMore = !!(traps || (net.summaryZh && net.summaryZh.length > (lead || '').length + 8));
-    return `<div class="zone-essay">
-      <h3>${esc(t('zone.cognates'))}</h3>
-      <div class="net-row"><span class="k">日耳曼</span>${pills(net.germanic)}</div>
-      <div class="net-row"><span class="k">羅曼</span>${pills(net.romance)}</div>
-      ${lead ? `<p class="essay-lead">${esc(lead)}</p>` : ''}
-      ${
-        hasMore
-          ? `<details class="essay-more"><summary>${esc(t('zone.expandEssay'))}</summary>${
-              traps ? `<ul class="ff-list">${traps}</ul>` : ''
-            }${net.summaryZh ? `<p>${esc(net.summaryZh)}</p>` : ''}</details>`
-          : ''
-      }
-    </div>`;
-  }
-
-  function attachCardLinks(el, cards) {
-    if (!el || !VO.storage) return;
-    el.querySelectorAll('.lang-card').forEach((node, i) => {
-      /* links already baked if href present */
-    });
-  }
-
-  function cardsInBoardOrder(cards, order) {
-    const byLang = {};
-    (cards || []).forEach((c) => {
-      if (c && c.lang) byLang[c.lang] = c;
-    });
-    return order.map((lang) => byLang[lang] || { lang, equiv: 'gap', primary: { headword: '' } });
-  }
-
-  function renderCardList(cards) {
-    return cards
-      .map((c) =>
-        renderLangCard(c, { radixUrl: VO.storage.radixHref(c.lang, c.primary && c.primary.headword) })
-      )
-      .join('');
-  }
-
-  function emptySlot(lang) {
-    return `<article class="lang-card empty-slot lang-${esc(lang)}" data-lang="${esc(lang)}">
-      <span class="lang-name">${esc(t('langFull.' + lang))}</span>
-    </article>`;
-  }
-
-  const DEFAULT_CARD_BG = {
-    zh: 'img/bg-zh.jpg',
-    ko: 'img/bg-ko.jpg',
-    ja: 'img/bg-ja.jpg',
-    en: 'img/bg-en.jpg',
-    de: 'img/bg-de.jpg',
-    es: 'img/bg-es.jpg',
-    fr: 'img/bg-fr.jpg',
-    it: 'img/bg-it.jpg',
-    la: 'img/bg-la.jpg',
-  };
-
-  function applyCardBackgrounds(root) {
-    const scope = root || document;
-    const store = VO.storage;
-    const custom = store && store.getCardBgs ? store.getCardBgs() : {};
-    scope.querySelectorAll('.lang-card[data-lang]').forEach((card) => {
-      const lang = card.getAttribute('data-lang');
-      const uploaded = custom[lang];
-      const fallback = DEFAULT_CARD_BG[lang];
-      const url =
-        typeof uploaded === 'string' && uploaded.indexOf('data:image/') === 0
-          ? uploaded
-          : fallback
-            ? fallback
-            : '';
-      if (url) {
-        card.classList.add('has-custom-bg');
-        card.style.setProperty('--card-bg', 'url("' + String(url).replace(/"/g, '\\"') + '")');
-      } else {
-        card.classList.remove('has-custom-bg');
-        card.style.removeProperty('--card-bg');
-      }
-    });
-  }
-
-  function zoneLabel(key) {
-    return `<div class="zone-label">${esc(t(key))}</div>`;
-  }
-
-  function renderZoneA(el, zoneA) {
-    if (!el) return;
-    if (!zoneA) {
-      el.innerHTML = '';
-      return;
-    }
-    const order = (VO.schema && VO.schema.BOARD_CJK) || ['ko', 'zh', 'ja'];
-    const cards = cardsInBoardOrder(zoneA.cards, order);
-    const html = cards
-      .map((c) =>
-        c && c.primary && (c.primary.headword || c.primary.glossZh)
-          ? renderLangCard(c, { radixUrl: VO.storage.radixHref(c.lang, c.primary && c.primary.headword) })
-          : emptySlot(c.lang)
-      )
-      .join('');
-    el.innerHTML = `${zoneLabel('zone.a')}<div class="card-grid board-cjk">${html}</div>`;
-    applyCardBackgrounds(el);
-  }
-
-  function renderZoneB(el, zoneB, { failed, onRetry } = {}) {
-    if (!el) return;
-    if (!zoneB && !failed) {
-      el.innerHTML = '';
-      return;
-    }
-    const order = (VO.schema && VO.schema.BOARD_EU) || ['es', 'la', 'de', 'it', 'fr', 'en'];
-    const cards = zoneB ? cardsInBoardOrder(zoneB.cards, order) : order.map((lang) => ({ lang }));
-    const html = cards
-      .map((c) =>
-        c && c.primary && (c.primary.headword || c.primary.glossZh)
-          ? renderLangCard(c, { radixUrl: VO.storage.radixHref(c.lang, c.primary && c.primary.headword) })
-          : emptySlot(c.lang)
-      )
-      .join('');
-    const retry = failed
-      ? `<button type="button" class="btn-ghost retry-b" id="btn-retry-b">${esc(t('zone.retryB'))}</button>`
-      : '';
-    el.innerHTML = `${retry}${zoneLabel('zone.b')}<div class="card-grid board-eu">${html}</div>`;
-    el.querySelector('#btn-retry-b')?.addEventListener('click', () => onRetry && onRetry());
-    applyCardBackgrounds(el);
-  }
-
-  function renderZoneSkeleton(el, zone) {
-    if (!el) return;
-    const order =
-      zone === 'A'
-        ? (VO.schema && VO.schema.BOARD_CJK) || ['ko', 'zh', 'ja']
-        : (VO.schema && VO.schema.BOARD_EU) || ['es', 'la', 'de', 'it', 'fr', 'en'];
-    const grid = zone === 'A' ? 'board-cjk' : 'board-eu';
-    const label = zone === 'A' ? 'zone.a' : 'zone.b';
-    el.innerHTML = `${zoneLabel(label)}<div class="card-grid ${grid}">
-      ${order
-        .map(
-          (lang) =>
-            `<article class="lang-card skeleton lang-${esc(lang)}" data-lang="${esc(lang)}"><span class="lang-name">${esc(t('langFull.' + lang))}</span><p class="sk-caption">撰寫中…</p></article>`
-        )
-        .join('')}
-    </div>`;
-    applyCardBackgrounds(el);
-  }
-
-  function renderHistory(el, records, { onSelect, onDelete, activeId } = {}) {
-    if (!el) return;
-    const list = Array.isArray(records) ? records : [];
+  function renderHistory(list, active) {
+    const el = document.getElementById('grimoire-list');
     if (!list.length) {
-      el.innerHTML = `<div class="history-empty">${esc(t('history.empty'))}</div>`;
+      el.innerHTML = `<p class="rail-empty">${esc(t('rail.emptyGrimoire'))}</p>`;
       return;
     }
     el.innerHTML = list
-      .map((r) => {
-        const active = r.id === activeId ? ' active' : '';
-        return `<div class="history-item${active}" data-id="${esc(r.id)}">
-          <button type="button" class="history-select">
-            <span class="hi-q">${esc(r.query || r.normalized || '')}</span>
-            <span class="hi-g">${esc(r.senseGloss || '')}</span>
-          </button>
-          <button type="button" class="history-delete" data-id="${esc(r.id)}" title="${esc(t('history.delete'))}" aria-label="${esc(t('history.delete'))}">×</button>
+      .map(
+        (row) => `
+      <div class="rail-item ${row.normalized === active ? 'is-active' : ''}">
+        <button type="button" class="rail-open" data-hist="${esc(row.normalized)}">
+          <span class="rail-word">${esc(row.lemma)}</span>
+          <span class="rail-gloss">${esc(row.glossZh)}</span>
+        </button>
+        <button type="button" class="rail-del" data-hist-del="${esc(row.normalized)}" title="${esc(t('rail.deleteItem'))}" aria-label="${esc(t('rail.deleteItem'))}">×</button>
+      </div>`
+      )
+      .join('');
+  }
+
+  function renderCabinet(list) {
+    const el = document.getElementById('cabinet-list');
+    const count = document.getElementById('cabinet-count');
+    if (count) count.textContent = String(list.length);
+    if (!list.length) {
+      el.classList.remove('can-mix');
+      el.innerHTML = `<p class="rail-empty">${esc(t('rail.emptyCabinet'))}</p>`;
+      return;
+    }
+    const canMix = el.classList.contains('can-mix');
+    el.innerHTML = `<p class="rail-cab-hint">${esc(t('rail.cabinetHint'))}</p>` +
+      list
+        .map((row) => {
+          const meta = VA.schema.kindMeta(row.kind);
+          return `
+        <div class="rail-item kind-${esc(row.kind)}" data-cab="${esc(row.id)}" title="${esc(t('rail.cabinetItemHint'))}">
+          <span class="rail-word">${esc(row.surface)}</span>
+          <span class="rail-gloss">${esc(meta.zh)} · ${esc(row.meaningZh)} · ×${row.count || 1}</span>
+          <button type="button" class="rail-mix" data-cab-mix="${esc(row.id)}" title="${esc(t('rail.mixHint'))}">${esc(t('op.coniunctioShort'))}</button>
+        </div>`;
+        })
+        .join('');
+    el.classList.toggle('can-mix', canMix);
+  }
+
+  function setCabinetMixEnabled(on) {
+    document.getElementById('cabinet-list')?.classList.toggle('can-mix', Boolean(on));
+  }
+
+  function showCabGhost(row, x, y) {
+    let el = document.getElementById('cab-ghost');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'cab-ghost';
+      el.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(el);
+    }
+    const meta = VA.schema.kindMeta(row.kind);
+    el.innerHTML = `<span class="rail-word">${esc(row.surface)}</span><span class="rail-gloss">${esc(meta.zh)}</span>`;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    el.classList.add('show');
+  }
+
+  function moveCabGhost(x, y) {
+    const el = document.getElementById('cab-ghost');
+    if (!el) return;
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+  }
+
+  function hideCabGhost() {
+    document.getElementById('cab-ghost')?.classList.remove('show');
+  }
+
+  function renderExamples() {}
+
+  function setStatus(msg, kind) {
+    const el = document.getElementById('status');
+    el.textContent = msg || '';
+    el.dataset.kind = kind || '';
+  }
+
+  function setCasting(on) {
+    document.getElementById('stage').classList.toggle('is-casting', on);
+    document.getElementById('crucible').classList.toggle('is-hot', on);
+    document.getElementById('cast-btn').disabled = on;
+    VA.audio?.setCircle?.(on);
+  }
+
+  function setIdle(on) {
+    document.getElementById('crucible')?.classList.add('hidden');
+    document.getElementById('stage').classList.toggle('is-idle', on);
+    const hint = document.getElementById('idle-hint');
+    if (hint) {
+      const p = VA.langs?.current?.() || {};
+      hint.textContent = p.crucibleHint || 'Solve et coagula';
+      hint.hidden = !on;
+    }
+    if (on) setSheetOpen(false);
+  }
+
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => el.classList.remove('show'), 1800);
+  }
+
+  function fillSettings(settings, apiKey) {
+    const provider = settings.provider || 'grok';
+    applyProvider(provider, {
+      model: settings.model,
+      baseUrl: settings.baseUrl,
+      apiKey,
+    });
+    document.getElementById('set-effort').value = settings.reasoningEffort || 'low';
+    const clickSpeak = document.getElementById('set-click-speak');
+    if (clickSpeak) clickSpeak.checked = settings.clickSpeak !== false;
+    const engine = document.getElementById('set-tts-engine');
+    if (engine) engine.value = settings.ttsEngine || 'browser';
+    const amb = document.getElementById('set-ambient');
+    if (amb) amb.checked = settings.ambientOn !== false;
+    const sfx = document.getElementById('set-sfx');
+    if (sfx) sfx.checked = settings.sfxOn !== false;
+    const av = document.getElementById('set-ambient-vol');
+    if (av) av.value = String(Math.round((settings.ambientVol == null ? 0.55 : settings.ambientVol) * 100));
+    const sv = document.getElementById('set-sfx-vol');
+    if (sv) sv.value = String(Math.round((settings.sfxVol == null ? 0.55 : settings.sfxVol) * 100));
+    syncVolOutputs();
+    applyFontScale(settings.fontScale);
+    renderGrimSettings();
+  }
+
+  function renderGrimSettings() {
+    const el = document.getElementById('grim-lang-list');
+    if (!el) return;
+    const langs = VA.langs?.list?.() || [];
+    let total = 0;
+    el.innerHTML = langs
+      .map((p) => {
+        const n = VA.storage.historyCount(p.id);
+        total += n;
+        const countLabel = n ? `${n} 則` : t('settings.grimEmpty');
+        return `
+        <div class="grim-lang-row">
+          <div>
+            <div class="grim-lang-name">${esc(p.label.zh)} · ${esc(p.label.native)}</div>
+            <div class="hint">${esc(countLabel)}</div>
+          </div>
+          <button type="button" class="icon-btn" data-clear-lang="${esc(p.id)}" ${n ? '' : 'disabled'}>${esc(t('settings.clearLang'))}</button>
         </div>`;
       })
       .join('');
-    el.querySelectorAll('.history-select').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const rec = list.find((r) => r.id === btn.closest('.history-item')?.getAttribute('data-id'));
-        onSelect && onSelect(rec);
-      });
-    });
-    el.querySelectorAll('.history-delete').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const rec = list.find((r) => r.id === btn.getAttribute('data-id'));
-        onDelete && onDelete(rec);
-      });
-    });
+    const all = document.getElementById('clear-all-history');
+    if (all) all.disabled = total === 0;
   }
 
-  function setSpeakBtnState(btn, state) {
+  function syncVolOutputs() {
+    const av = document.getElementById('set-ambient-vol');
+    const ao = document.getElementById('ambient-vol-value');
+    if (av && ao) ao.textContent = `${av.value}%`;
+    const sv = document.getElementById('set-sfx-vol');
+    const so = document.getElementById('sfx-vol-value');
+    if (sv && so) so.textContent = `${sv.value}%`;
+  }
+
+  const FONT_BASE = 1.3;
+
+  function clampFontScale(scale) {
+    const n = Number(scale);
+    if (!Number.isFinite(n)) return 1;
+    return Math.min(1.5, Math.max(0.8, Math.round(n * 20) / 20));
+  }
+
+  function applyFontScale(scale) {
+    const n = clampFontScale(scale);
+    document.documentElement.style.setProperty('--fs', String(n * FONT_BASE));
+    const slider = document.getElementById('set-font-scale');
+    if (slider) slider.value = String(Math.round(n * 100));
+    const out = document.getElementById('font-scale-value');
+    if (out) out.textContent = `${Math.round(n * 100)}%`;
+    document.querySelectorAll('[data-font-preset]').forEach((btn) => {
+      const v = Number(btn.getAttribute('data-font-preset'));
+      btn.classList.toggle('is-on', Math.abs(v - n) < 0.03);
+    });
+    return n;
+  }
+
+  function updateAmbientBtn(on) {
+    const btn = document.getElementById('ambient-btn');
     if (!btn) return;
-    btn.classList.remove('speaking', 'loading');
-    btn.disabled = false;
-    const label = btn.querySelector('.speak-label');
-    if (state === 'loading') {
-      btn.classList.add('loading');
-      btn.disabled = true;
-      btn.setAttribute('aria-busy', 'true');
-      if (label) label.textContent = t('status.speakLoading');
-    } else if (state === 'speaking') {
-      btn.classList.add('speaking');
-      btn.setAttribute('aria-busy', 'false');
-      if (label) label.textContent = t('card.speak');
-    } else {
-      btn.setAttribute('aria-busy', 'false');
-      if (label) label.textContent = t('card.speak');
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    btn.textContent = on ? '爐樂' : '靜音';
+    btn.classList.toggle('is-muted', !on);
+  }
+
+  function applyProvider(id, { model, baseUrl, apiKey, fillDefaults } = {}) {
+    const spec = VA.ai.PROVIDERS[id] || VA.ai.PROVIDERS.grok;
+    document.querySelectorAll('#provider-row [data-provider]').forEach((btn) => {
+      btn.classList.toggle('is-on', btn.getAttribute('data-provider') === spec.id);
+    });
+    const hint = document.getElementById('provider-hint');
+    if (hint) {
+      hint.innerHTML = `${esc(spec.hint)} · <a href="${esc(spec.keyUrl)}" target="_blank" rel="noopener">取得金鑰</a>`;
+    }
+    const keyEl = document.getElementById('set-key');
+    keyEl.placeholder = spec.placeholder;
+    if (apiKey != null) keyEl.value = apiKey;
+    document.getElementById('set-model').value = fillDefaults ? spec.model : model || spec.model;
+    document.getElementById('set-base').value = fillDefaults ? spec.baseUrl : baseUrl || spec.baseUrl;
+    const list = document.getElementById('model-presets');
+    if (list) {
+      list.innerHTML = spec.models.map((m) => `<option value="${esc(m)}"></option>`).join('');
     }
   }
 
-  VO.ui = {
-    esc,
-    setStatus,
-    setLoading,
-    setSpeakBtnState,
-    isFlippableCard,
-    toggleCardFlip,
-    renderLangChips,
-    renderSensePicker,
-    renderLockedChip,
-    renderZoneA,
-    renderZoneB,
-    renderZoneSkeleton,
-    applyCardBackgrounds,
+  function selectedProvider() {
+    return document.querySelector('#provider-row [data-provider].is-on')?.getAttribute('data-provider') || 'grok';
+  }
+
+  let lastSettingsTab = 'api';
+
+  function showSettingsTab(id) {
+    const tab = String(id || lastSettingsTab || 'api');
+    lastSettingsTab = tab;
+    const list = document.getElementById('settings-tabs');
+    if (list) {
+      const vertical = window.matchMedia('(min-width: 821px)').matches;
+      list.setAttribute('aria-orientation', vertical ? 'vertical' : 'horizontal');
+    }
+    document.querySelectorAll('#settings-tabs [data-set-tab]').forEach((btn) => {
+      const on = btn.getAttribute('data-set-tab') === tab;
+      btn.classList.toggle('is-on', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      btn.tabIndex = on ? 0 : -1;
+    });
+    document.querySelectorAll('.settings-pane').forEach((pane) => {
+      const on = pane.getAttribute('data-set-pane') === tab;
+      pane.classList.toggle('hidden', !on);
+      pane.hidden = !on;
+    });
+  }
+
+  function openSettings(on, tab) {
+    const overlay = document.getElementById('settings-overlay');
+    overlay.classList.toggle('hidden', !on);
+    if (on) {
+      showSettingsTab(tab || lastSettingsTab || 'api');
+      requestAnimationFrame(() => {
+        document.querySelector('#settings-tabs [data-set-tab].is-on')?.focus();
+      });
+    }
+  }
+
+  VA.ui = {
+    renderNode,
+    renderInspector,
+    renderGuide,
     renderHistory,
-    CHIP_LANGS,
+    renderCabinet,
+    setCabinetMixEnabled,
+    showCabGhost,
+    moveCabGhost,
+    hideCabGhost,
+    renderExamples,
+    setStatus,
+    setCasting,
+    setIdle,
+    toast,
+    fillSettings,
+    renderGrimSettings,
+    FONT_BASE,
+    applyFontScale,
+    clampFontScale,
+    updateAmbientBtn,
+    applyProvider,
+    selectedProvider,
+    showSettingsTab,
+    openSettings,
+    syncVolOutputs,
+    setSheetOpen,
+    showSheetTab,
+    fillSheetTabs,
+    setRailOpen,
+    esc,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

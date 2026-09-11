@@ -1,156 +1,394 @@
-/**
- * Verba Orbis prompt templates (file:// safe)
- */
 (function (global) {
-  const VO = (global.VerbaOrbis = global.VerbaOrbis || {});
+  const VA = (global.VerbaAthanor = global.VerbaAthanor || {});
 
-  const NON_EQUIVALENCE = `【對等規則 — 禁止假 1:1】
-- equiv 必填：exact | narrower | wider | split | approx | gap。不確定時用 approx，不要用 exact。
-- 若該語言沒有對應「已鎖定義」的單一詞，equiv 必須是 gap 或 approx 或 split，並明白寫「沒有一詞之譯」。
-- 禁止生造詞典裡不存在的對譯（例如為了填格子而寫一個沒人用的漢語直譯外來詞）。
-- 禁止把另一義的常用對譯當成這一義的主詞。
-- 禁止把拼音、羅馬字、或漢字轉寫偽造成該語言的詞。
-- 語源務必誠實：不確定的 cognate 加「可能／存疑」；禁止把偶然同形（love / 愛）寫成同源。
-- 漢字圈：韓語必須標 한자어/고유어/외래어；日語必須標 漢語/和語/外来語 與 音讀/訓讀。Hanja/漢字不確定就留空，禁止瞎編。
-- 只輸出一個 JSON 物件。不要 markdown、不要代碼圍欄、不要前言。`;
-
-  function lockedSenseBlock(sense) {
-    const s = sense || {};
-    return `【已鎖定義項 — 禁止改義】
-- senseId: ${s.id || ''}
-- 查詢形: ${s.query || ''}
-- 來源語: ${s.sourceLang || ''}
-- 詞性: ${s.pos || ''}
-- 中文義鎖: ${s.glossZh || ''}
-- 語域: ${s.domain || ''}
-規則：八語卡片必須對準「中文義鎖」。若某語言的常用對譯其實對應另一義（例如法語 aimer 也表「喜歡」），不得把該語言主詞改成另一義。同形異義、範圍較窄／較寬、需拆詞、無對等，只用 caveatsZh 一句（≤40字）說明差在哪。exact 則 caveatsZh 留空。`;
-  }
-
-  const SENSE_SYSTEM = `你是跨語言詞義助理（Verba Orbis）。任務：為使用者的查詢列出「需要分開比較」的義項。
-只輸出一個 JSON。解釋語言：繁體中文。
-candidates 2–6 項；若確實只有一義，仍輸出 1 項。
-每個義項必須能讓學習者在不查詞典的情況下做選擇：詞性、一行中文義、語域。
-id 必須是 s1, s2, … 依序。
-語域只能是：日常、文學、書面、宗教、哲學、口語、術語、古語。
-詞性短碼：n v adj adv prep conj pron prt phr idiom（可 n/v）。
-不要做八語翻譯。不要選「最常見義」當唯一答案。`;
-
-  function senseUser({ query, detected, sourceLang, effectiveSourceLang }) {
-    return `查詢：${query}
-來源語（偵測=${detected}，使用者覆寫=${sourceLang}）：${effectiveSourceLang}
-請列出義項。
-
-輸出 schema：
-{
-  "query": string,
-  "detectedSourceLang": "zh"|"ko"|"ja"|"en"|"de"|"es"|"fr"|"it",
-  "candidates": [
-    {
-      "id": "s1",
-      "pos": "n",
-      "glossZh": "一行繁中義，≤40字",
-      "domain": "日常",
-      "headwordHint": "建議辭書形",
-      "note": "可空"
-    }
-  ]
-}`;
-  }
-
-  const ZONE_A_SYSTEM = `你是漢語／韓語／日語對比的詞條作者（Verba Orbis · Zone A）。
-讀者是以繁體中文做筆記的學習者。文風：短詞條，與歐語圈同一密度，不是論文。
-固定語言順序：中文 → 韓語 → 日語。
-${NON_EQUIVALENCE}
-你必須先讀「已鎖定義項」。這一區只處理鎖定義。`;
-
-  function zoneAUser(lockedSense) {
-    return `${lockedSenseBlock(lockedSense)}
-
-請產生 Zone A JSON：
-{
-  "zone": "A",
-  "cards": [
-    {
-      "lang": "zh",
-      "equiv": "exact",
-      "primary": {
-        "headword": "",
-        "reading": "",
-        "hanja": "",
-        "glossZh": "一行繁中核心義，必須對準已鎖定義",
-        "pos": "n",
-        "register": "中性",
-        "gender": "",
-        "isPhrase": false
+  const ANALYZE_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: [
+      'word',
+      'lemma',
+      'ipa',
+      'pos',
+      'gender',
+      'glossZh',
+      'glossFr',
+      'alchNoteZh',
+      'morphemes',
+      'path',
+      'firstAttested',
+      'example',
+    ],
+    properties: {
+      word: { type: 'string' },
+      lemma: { type: 'string' },
+      ipa: { type: 'string' },
+      pos: { type: 'string' },
+      gender: { type: 'string' },
+      glossZh: { type: 'string' },
+      glossFr: { type: 'string' },
+      alchNoteZh: { type: 'string' },
+      firstAttested: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['year', 'era', 'form', 'whereZh', 'sourceZh', 'author', 'work', 'certainty'],
+        properties: {
+          year: { type: 'string' },
+          era: { type: 'string' },
+          form: { type: 'string' },
+          whereZh: { type: 'string' },
+          sourceZh: { type: 'string' },
+          author: { type: 'string' },
+          work: { type: 'string' },
+          certainty: { type: 'string' },
+        },
       },
-      "etymologyZh": "",
-      "sinoClass": "hanja|native|loan|mixed",
-      "jpClass": "kango|wago|gairaigo|mixed",
-      "jpReadingType": "on|kun|mixed|na",
-      "caveatsZh": ""
+      morphemes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: [
+            'id',
+            'surface',
+            'kind',
+            'meaningZh',
+            'meaningFr',
+            'origin',
+            'originForm',
+            'originPath',
+            'noteZh',
+          ],
+          properties: {
+            id: { type: 'string' },
+            surface: { type: 'string' },
+            kind: { type: 'string', enum: ['pfx', 'root', 'sfx', 'cf', 'infl', 'oth', 'han', 'stem'] },
+            meaningZh: { type: 'string' },
+            meaningFr: { type: 'string' },
+            origin: { type: 'string' },
+            originForm: { type: 'string' },
+            originPath: { type: 'string' },
+            noteZh: { type: 'string' },
+          },
+        },
+      },
+      path: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['era', 'lang', 'form', 'glossZh', 'via', 'noteZh', 'certainty'],
+          properties: {
+            era: { type: 'string' },
+            lang: { type: 'string' },
+            form: { type: 'string' },
+            glossZh: { type: 'string' },
+            via: { type: 'string' },
+            noteZh: { type: 'string' },
+            certainty: { type: 'string' },
+          },
+        },
+      },
+      example: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['fr', 'zh'],
+        properties: {
+          fr: { type: 'string' },
+          zh: { type: 'string' },
+        },
+      },
+    },
+  };
+
+  const EXPAND_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['op', 'seed', 'items'],
+    properties: {
+      op: { type: 'string', enum: ['distill', 'derive', 'compound'] },
+      seed: { type: 'string' },
+      items: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['word', 'kind', 'pos', 'glossZh', 'linkZh', 'era'],
+          properties: {
+            word: { type: 'string' },
+            kind: { type: 'string' },
+            pos: { type: 'string' },
+            glossZh: { type: 'string' },
+            linkZh: { type: 'string' },
+            era: { type: 'string' },
+          },
+        },
+      },
+    },
+  };
+
+  let packLang = null;
+
+  function pack() {
+    const id = packLang || VA.langs?.currentId?.() || 'fr';
+    return (VA.langs?.LANGS && VA.langs.LANGS[id]) || VA.langs?.current?.() || { id: 'fr', targetLang: 'Modern French', extraRules: '', honestyExtra: '', ipaHint: 'IPA' };
+  }
+
+  function usingLang(id, fn) {
+    const prev = packLang;
+    packLang = id || null;
+    try {
+      return fn();
+    } finally {
+      packLang = prev;
     }
-  ]
-}
-
-約束：
-- cards 必須恰好 3 張，lang 依序 zh, ko, ja。
-- 每卡 primary.headword 必填真實辭書形（中文「鄉愁」、韓語「향수」、英語「oath」）。禁止填空白、「—」、或只把詞丟進 plural。
-- 每卡 primary.glossZh 必填（一行繁中核心義，對準鎖定義）。這是 UI「核心義」與漂移檢查的欄位。
-- zh 卡：不要填 sinoClass/jpClass。
-- ko 卡：sinoClass 必填。primary.headword = 한글（향수），primary.hanja = 漢字（鄕愁，不確定就 ""），primary.reading = 羅馬化（hyangsu）。
-- ja 卡：jpClass、jpReadingType 必填。
-- 不要寫 hanziRelationZh、semanticRangeZh。
-- 不要輸出 alternatives、example、triangle。
-- caveatsZh：僅當 equiv 不是 exact 時寫一句（≤40字），說明這詞比鎖定義窄／寬／需拆／無對等／同形另有他義。exact 留空。
-- etymologyZh：一兩句，20–50 字。只寫本詞怎麼來，不要展開漢字圈對照長文。
-- 中文卡 primary.reading 必須是帶調號拼音（xiāngchóu），禁止數字調（xiang1chou2）。`;
   }
 
-  const ZONE_B_SYSTEM = `你是拉丁語與英語／德語／西班牙語／法語／義大利語對比的詞條作者（Verba Orbis · Zone B）。
-讀者是以繁體中文做筆記的學習者。文風：短詞條，與漢字圈同一密度。
-固定語言順序：英語 → 德語 → 西班牙語 → 法語 → 義大利語 → 拉丁語。
-拉丁語是歐語圈的共同軸（羅曼語多由此分出；日耳曼語多為借譯或平行）。
-${NON_EQUIVALENCE}
-先讀「已鎖定義項」與「漢字圈摘要」。歐洲語言與拉丁語的主詞必須對準同一鎖定義，不要被 Zone A 的漢字詞表面帶走，也不要滑到該詞的其他義。
-特別檢查：法語 aimer（愛／喜歡）、西語 amar/querer、德語 lieben/gern haben、義語 amare/voler bene。
-de/es/fr/it/la 名詞與形容詞必須填 gender（m|f|n|mf|inv）。德語名詞盡量給 plural。拉丁名詞給性別與屬格（plural 欄可寫 gen.）。`;
-
-  function zoneBUser(lockedSense, zoneADigest) {
-    return `${lockedSenseBlock(lockedSense)}
-
-【漢字圈已生成摘要 — 僅供對齊，不要改義】
-${zoneADigest || '（無摘要）'}
-
-請產生 Zone B JSON：
-{
-  "zone": "B",
-  "cards": [ /* 6 cards: en de es fr it la, same LanguageCard shape as Zone A */ ]
-}
-
-約束：
-- cards 必須恰好 6 張，lang 依序 en, de, es, fr, it, la。
-- 每卡 primary.headword 必填真實辭書形（oath / Eid / juramento / serment / giuramento / iūsiūrandum）。禁止空白或「—」。複數只寫 plural。
-- 拉丁卡 lang 必須是 "la"。primary.reading 可用長音符號（iūsiūrandum）。不要填 ipa。
-- en/de/es/fr/it：primary.ipa 必填寬式 IPA（如 hoʊmˈsɪknəs、niˈeβe、mal dy pɛ）。不要加斜線，UI 會加。不要用拼讀或一般注音代替。拉丁與漢字圈不要填 ipa。
-- 每卡 primary.glossZh 必填。
-- 不要寫 hanziRelationZh、semanticRangeZh。
-- 不要填 sinoClass / jpClass。
-- 不要輸出 alternatives、example、cognateNet。
-- caveatsZh：僅當 equiv 不是 exact 時寫一句（≤40字），說明這詞比鎖定義窄／寬／需拆／無對等／同形另有他義。exact 留空。不要寫用法百科。
-- etymologyZh：一兩句，20–50 字。羅曼語與拉丁的關係可寫在語源。`;
+  function honesty() {
+    const p = pack();
+    return `【誠實規則】
+- 目標語：${p.targetLang}。只分析這個語言的詞。
+- 拆到最小「有意義的語素」，不是音節。能看見的派生後綴／前綴必須拆開，即使詞根是黏著的、不能單獨成詞。
+- 禁止把整詞複製成唯一一枚 kind=oth 的語素。真的不能拆（單語素根如 jour、sun、雨）才只給 1 枚，kind 用 root。
+- 前綴／詞根／後綴／構詞成分分清楚。屈折詞尾標 infl。
+- 所有說明用繁體中文。詞形本身保持該語言／拉丁／希臘／PIE 原形。
+${p.honestyExtra || ''}
+${p.extraRules ? '- ' + p.extraRules : ''}
+【語素／詞根註釋 — 與整詞同等重要，禁止空白】
+- 每個 morpheme 必填 meaningZh（此語素自己的中文核心義，2–16字）、meaningFr（目標語釋義）、noteZh、originPath。
+- meaningZh 禁止只寫「前綴／詞根／後綴」，禁止複製整詞的 glossZh，禁止空字串。
+- originPath 格式固定：「ERA form → ERA form → …」，例：PIE *ḱred-dʰeh₁- → Lat credere → VL *credere → OF croire。同一語素永遠寫同一條鏈。
+- noteZh 寫這枚語素自己的來源（音變／借詞／構詞），20–80字，禁止空白。
+- 每個 path 步驟必填 glossZh 與 noteZh。派生／複合／蒸餾每一項也必填 glossZh。
+【詞源路徑 path — 必須詳細、穩定、不跳步】
+- 由最古到今。能到 PIE 就到；不確定則 certainty=reconstructed，glossZh 加「存疑」。禁止瞎編 PIE。
+- 時代只准用短碼，禁止寫全名：PIE PIt PGmc Gk Lat VL OF MF Fr OE ME EModE ModE AN ON It Sp Ar Gaul OJ MidJ ModJ Ch OCH Native Sino OK SK MK。
+- 中間階段能列就列，禁止跳步。最短 3 步，典型 5–8 步。
+  法語通俗：PIE（若穩）→ Lat → VL → OF → MF → Fr
+  法語書面：Lat 或 Gk → Fr（via=learned）
+  英語日耳曼：PIE（若穩）→ PGmc → OE → ME → EModE → ModE
+  英語拉丁／法語：Lat/Gk → OF/AN（若經法語）→ ME → ModE
+  日語漢語：Ch → MidJ → ModJ；和語：OJ → MidJ → ModJ
+  韓語漢字：Ch → SK → MK；固有語：OK → SK → MK
+- via 只能是：inherit（繼承）borrow（借詞）learned（書面借入）popular（通俗音變）calque（仿譯）reconstruct（構擬）compound（合劑）
+- certainty 只能是：certain | probable | reconstructed
+- 每一步 noteZh 寫「如何從上一步變成這一步」（音變／語義／構詞），20–80字。禁止只重複 glossZh。
+- PIE 只用 Wiktionary／LIV 通行構擬，一律 * 開頭。禁止同一詞換一套構擬。
+【穩定性 — 同一 lemma 永遠同一答案】
+- 同一詞永遠用同一套語素切開、同一套 path、同一條 originPath、同一套 PIE、同一套 firstAttested。
+- 只採教科書／Wiktionary 主條，不要列替代構擬或少數說。
+- 語素 surface 用構詞可見形（croy / in- / -able），不要每次改切法。
+【最早出現 firstAttested — 本詞 lemma 的書面首見，不是 PIE 原鄉、不是詞根史前起源地】
+- year：有通行年份寫四位數（1549）；只有世紀寫 12c、17c。禁止每次換年份。
+- era：首見時代短碼（OF MF Fr OE ME EModE ModE OJ MidJ ModJ SK MK…）。
+- form：當時寫下的詞形。
+- whereZh：固定「地區或語種，文獻類型」，如「法國書面語」「古英語文獻」「日本上代文獻」。≤40字。
+- author：首見文獻的作者通行名（Du Bellay、Rabelais、紫式部、John Gerard）。不知則空字串。禁止瞎編作者。
+- work：首見著作名（La Deffence et Illustration de la Langue Françoyse、万葉集、The Herball）。不知則空字串。禁止瞎編書名。
+- 作者或書名只要辭書／教科書有通行出處，就一定要填；只知其一就只填其一。匿名總集只填 work（如 万葉集）。
+- sourceZh：通行辭書（TLFi、OED、FEW、日本国語大辞典），不要把作者書名寫進 sourceZh。不知則空字串。
+- certainty：確切年份有辭書共識才用 certain，其餘 probable。
+- 這是「這個字」被寫下來的最早紀錄。同一 lemma 永遠同一套 year／whereZh／author／work。`;
   }
 
-  const CONTINUE_JSON = '上次輸出不是合法 JSON。請只輸出完整 JSON，不要重複解說。';
+  function analyzeSystem() {
+    const p = pack();
+    return `你是${p.label?.zh || ''}歷史形態學與詞源煉金術士（Verba Athanor）。
+任務：把「一個${p.targetLang}詞」分解成最小語素，給出由古到今的詞源路徑，並註明這個字最早寫在哪裡。
+讀者是以繁體中文做筆記的學習者。文風可以略帶煉金術隱喻，但語源必須學術誠實。
+${honesty()}
+只輸出一個 JSON 物件。`;
+  }
 
-  VO.prompts = {
-    NON_EQUIVALENCE,
-    lockedSenseBlock,
-    SENSE_SYSTEM,
-    senseUser,
-    ZONE_A_SYSTEM,
-    zoneAUser,
-    ZONE_B_SYSTEM,
-    zoneBUser,
-    CONTINUE_JSON,
+  function analyzeUser(word, { forceSplit } = {}) {
+    const p = pack();
+    const split = forceSplit
+      ? `
+【再切開】上一爐把這個詞當成一整塊。這次必須拆成 2 枚以上語素（詞根＋後綴，或前綴＋詞根等）。
+禁止只輸出 1 枚且 surface 等於整詞。黏著詞根也要給出來（如 soudain → soud- + -ain）。
+現代形式仍看得出的派生後綴（法語 -ain/-aine/-eur/-eux/-té/-tion/-able/-al/-ique/-ment；英語 -ly/-ness/-ful/-less/-hood；日語接辭／漢字）必須拆開。`
+      : '';
+    return `投入爐中的詞：${word}
+目標語：${p.targetLang}
+${split}
+
+請分析。若這是變位／複數／屈折形，lemma 寫辭書形，word 可保留輸入形。
+morphemes 1–6 個。能拆就拆：看得見的前綴、後綴、構詞成分都要單獨成枚，詞根即使不能單用也要留下。
+只有單語素根（前綴、後綴、漢字、語幹、構擬形、真正沒有內部結構的詞根）才只給 1 枚；禁止硬拆字母或音節。
+path 4–8 步（最古→今；歷史極短才可 3 步）。每步填 era、lang（=era 短碼）、form、glossZh、via、noteZh、certainty。
+整詞要有 glossZh／glossFr；每一枚語素要有獨立的 meaningZh／meaningFr／noteZh／originPath（這是重點：詞根來源鏈寫在 originPath）。
+alchNoteZh：一句煉金術式的中文，解釋這些語素如何「煉」成這個意思（≤80字）。
+firstAttested：這個字（lemma）最早寫在哪裡。year／era／form／whereZh／sourceZh／author／work／certainty 必填；author、work、sourceZh 不知則空字串，可知就填（哪位作者、哪本書）。
+${p.ipaHint || ''}。ipa 只填當代讀音一次，不要列歷史讀音。path.form 是詞形／拼寫，不是音標。
+pos 短碼：n v adj adv prep conj pron phr idiom。
+請給穩定、可重複的標準答案，不要每次換切法、換構擬或換首見年份。`;
+  }
+
+  const FILL_SCHEMA = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['glossZh', 'glossFr', 'morphemes', 'path', 'firstAttested'],
+    properties: {
+      glossZh: { type: 'string' },
+      glossFr: { type: 'string' },
+      firstAttested: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['year', 'era', 'form', 'whereZh', 'sourceZh', 'author', 'work', 'certainty'],
+        properties: {
+          year: { type: 'string' },
+          era: { type: 'string' },
+          form: { type: 'string' },
+          whereZh: { type: 'string' },
+          sourceZh: { type: 'string' },
+          author: { type: 'string' },
+          work: { type: 'string' },
+          certainty: { type: 'string' },
+        },
+      },
+      morphemes: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'surface', 'meaningZh', 'meaningFr', 'noteZh', 'originPath'],
+          properties: {
+            id: { type: 'string' },
+            surface: { type: 'string' },
+            meaningZh: { type: 'string' },
+            meaningFr: { type: 'string' },
+            noteZh: { type: 'string' },
+            originPath: { type: 'string' },
+          },
+        },
+      },
+      path: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['era', 'form', 'glossZh', 'via', 'noteZh', 'certainty'],
+          properties: {
+            era: { type: 'string' },
+            form: { type: 'string' },
+            glossZh: { type: 'string' },
+            via: { type: 'string' },
+            noteZh: { type: 'string' },
+            certainty: { type: 'string' },
+          },
+        },
+      },
+    },
+  };
+
+  function fillSystem() {
+    const p = pack();
+    return `你是${p.label?.zh || ''}詞源註釋員（Verba Athanor）。任務：為已經拆好的語素與歷史形式補上中文意思與來源說明。
+meaningFr 填${p.targetLang}釋義。每個語素寫它自己的意義，不要重複整詞的釋義。
+整詞 glossZh 必填繁體中文意思。語素 meaningZh、path.glossZh 也必須是繁體中文，禁止只填外文。
+path 每步補 glossZh、via、noteZh（如何演變）、certainty。語素補 originPath（ERA form → ERA form）。
+firstAttested 補這個字書面首見（year／era／form／whereZh／sourceZh／author／work／certainty）。作者與著作可知就填，不知留空，禁止瞎編。
+禁止空白。只輸出一個 JSON。`;
+  }
+
+  function fillUser(analysis) {
+    const morphs = (analysis.morphemes || [])
+      .map(
+        (m) =>
+          `- id=${m.id} surface=${m.surface} kind=${m.kind} origin=${m.origin} ${m.originForm || ''} originPath=${m.originPath || '（缺）'} 現有：${m.meaningZh || '（缺）'}`
+      )
+      .join('\n');
+    const path = (analysis.path || [])
+      .map((p) => `- ${p.era} ${p.form} via=${p.via || '（缺）'} 現有：${p.glossZh || '（缺）'} note=${p.noteZh || '（缺）'}`)
+      .join('\n');
+    const att = analysis.firstAttested || {};
+    return `整詞：${analysis.lemma}（${analysis.glossZh || ''}）
+整詞現有 glossZh：${analysis.glossZh || '（缺）'}
+請為整詞與下列語素、詞源步驟補上繁體中文意思。整詞 glossZh、每個語素 meaningZh、每條 path.glossZh 都必須含漢字，禁止只寫外文或空白。originPath 用「ERA form → ERA form」。via 用 inherit/borrow/learned/popular/calque/reconstruct/compound。certainty 用 certain/probable/reconstructed。
+並補 firstAttested（本詞書面首見，不是 PIE 原鄉）：year=${att.year || '（缺）'} era=${att.era || '（缺）'} form=${att.form || '（缺）'} whereZh=${att.whereZh || '（缺）'} author=${att.author || '（缺）'} work=${att.work || '（缺）'} sourceZh=${att.sourceZh || '（缺）'}。year 用 1549 或 12c；whereZh 用「法國書面語」這類固定格式。author／work 是首見的作者與書名，辭書有通行出處就填，不知則空字串。
+
+語素：
+${morphs || '（無）'}
+
+詞源路徑：
+${path || '（無）'}`;
+  }
+
+  function expandSystem(op) {
+    const p = pack();
+    const task =
+      op === 'distill'
+        ? `沿這枚語素／詞根回推更早的形式，給出「標準來源鏈」（不是隨意同源詞）。每項 word 是歷史形式，era 用固定短碼（${p.originHints}），kind 用 root 或 source。由較近到較古排列。必須與該語素 originPath／整詞 path 使用同一套歷史形式與構擬，禁止另給一套。linkZh 寫該步如何演變（音變／借詞／構詞），不要只寫「拉丁原質」。`
+        : op === 'compound'
+          ? `列出真正的${p.label?.zh || ''}複合詞。不要把普通派生（-able/-tion/-ness）假裝成複合。`
+          : `列出現代${p.label?.zh || ''}中共用這枚語素的派生詞（含通俗詞與書面詞，若兩者都存在）。優先常見詞。`;
+    return `你是${p.label?.zh || ''}詞源煉金術士（Verba Athanor）。任務：從一枚已析出的語素做「${op}」。
+目標語：${p.targetLang}
+${task}
+${honesty()}
+每項 4–8 個。derive 給現代${p.label?.zh || ''}裡真正帶這枚語素的詞；compound 給真正的複合／合劑。前綴、詞根、漢字、構詞成分通常都有常見例，不要無故回空陣列。沒有任何誠實例子才用空陣列。
+只輸出一個 JSON 物件。`;
+  }
+
+  function expandUser({ op, seed, morph, word, analysis }) {
+    const p = pack();
+    const m = morph || {};
+    return `操作：${op}
+當前${p.label?.zh || ''}詞：${word || analysis?.lemma || ''}
+語素表面：${seed || m.surface}
+kind：${m.kind || ''}
+意義：${m.meaningZh || ''} / ${m.meaningFr || ''}
+來源：${m.origin || ''} ${m.originForm || ''}
+來源鏈：${m.originPath || ''}
+筆記：${m.noteZh || ''}
+
+請列出 ${op} 的析出物。
+distill 時 word=歷史形式，era 用短碼（${p.originHints}），glossZh=該形式意義，linkZh=如何從較近一步變來（20–60字）。覆蓋標準中間階段（法語通俗含 VL/OF/MF；英語日耳曼含 PGmc/OE/ME）。同一語素永遠同一條鏈。
+derive/compound 時 word=現代${p.label?.zh || ''}辭書形，era=${p.eraDefault}，pos=詞性，linkZh=與種子語素的關係（一句繁中）。優先最常見、最穩定的例子。
+每一項 glossZh 必填（該詞／形式自己的中文意思），禁止空白。`;
+  }
+
+  function combineSystem() {
+    const p = pack();
+    return `你是${p.label?.zh || ''}詞源煉金術士（Verba Athanor）。任務：判斷兩枚語素／詞形能否在現代${p.targetLang}裡煉成真正的複合詞或合劑。
+目標語：${p.targetLang}
+- 只列真正同時用到這兩枚成分的複合／合劑（詞內可見這兩塊，或構詞上就是 A+B / B+A）。
+- 不要把普通派生（只加 -able/-tion/-ness／屈折／否定前綴黏上詞根）假裝成複合。
+- 不要為了湊數而編造。沒有誠實例子就回空陣列 items=[]。
+- 每項 0–8 個。kind 用 compound。
+${honesty()}
+只輸出一個 JSON 物件。`;
+  }
+
+  function combineUser({ a, b, word, analysis }) {
+    const p = pack();
+    const one = (m, label) => {
+      const x = m || {};
+      return `${label}：${x.surface || x.form || ''}
+kind：${x.kind || ''}
+意義：${x.meaningZh || x.gloss || ''} / ${x.meaningFr || ''}
+來源：${x.origin || x.era || ''} ${x.originForm || ''}`;
+    };
+    return `當前爐上的詞：${word || analysis?.lemma || '（無）'}
+${one(a, '試劑甲')}
+${one(b, '試劑乙')}
+
+請列出同時用到這兩枚的真正複合詞。
+word=現代${p.label?.zh || ''}辭書形，era=${p.eraDefault}，pos=詞性，linkZh=兩者如何結合（一句繁中，如「sun + day」），glossZh=該詞自己的中文意思。
+若這兩枚就是當前爐上那個詞的構詞，可以把本詞列為第一項。`;
+  }
+
+  VA.prompts = {
+    ANALYZE_SCHEMA,
+    EXPAND_SCHEMA,
+    FILL_SCHEMA,
+    analyzeSystem,
+    analyzeUser,
+    fillSystem,
+    fillUser,
+    expandSystem,
+    expandUser,
+    combineSystem,
+    combineUser,
+    usingLang,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

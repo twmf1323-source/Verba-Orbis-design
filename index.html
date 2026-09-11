@@ -2,169 +2,306 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Verba Orbis · 詞的世界</title>
-  <meta name="description" content="輸入一個詞或概念，先鎖定義項，再對照中韓日與英德西法義。">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Verba Athanor · 詞的煉金爐</title>
+  <meta name="description" content="把法語或英語詞投入煉金爐：拆成最小語素，再蒸餾更早的詞根，或看派生與複合。">
+  <link rel="icon" href="img/athanor.jpg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;600&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Cormorant+Garamond:ital,wght@0,500;0,700;1,500&family=Noto+Sans+JP:wght@400;500;600&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+JP:wght@500;700&family=Noto+Serif+KR:wght@500;700&family=Noto+Serif+TC:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-  <div id="app" class="app-shell">
+  <div id="app" class="app theme-fleur">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div>
+          <span class="brand-title" data-i18n="app.title">Verba Athanor</span>
+          <span class="brand-sub" data-i18n="app.subtitle">詞的煉金爐</span>
+        </div>
+        <span class="brand-tag" data-i18n="app.tag">L'athanor des mots</span>
+      </div>
+      <div class="header-actions">
+        <button type="button" class="icon-btn rail-toggle" id="rail-toggle" aria-expanded="false" data-i18n="rail.grimoire">魔典</button>
+        <button type="button" class="icon-btn" id="ambient-btn" title="爐火氛圍樂" aria-pressed="true">爐樂</button>
+        <button type="button" class="icon-btn" id="settings-btn"><span class="btn-full" data-i18n="settings.title">爐房設定</span><span class="btn-short" data-i18n="settings.short">設定</span></button>
+      </div>
+      <div id="lang-switch" class="lang-switch" role="tablist" aria-label="語言專案">
+        <button type="button" class="is-on" data-lang="fr"><span class="lang-full">Français</span><span class="lang-short">FR</span></button>
+        <button type="button" data-lang="en"><span class="lang-full">English</span><span class="lang-short">EN</span></button>
+        <button type="button" data-lang="ja"><span class="lang-full">日本語</span><span class="lang-short">JA</span></button>
+        <button type="button" data-lang="ko"><span class="lang-full">한국어</span><span class="lang-short">KO</span></button>
+      </div>
+    </header>
+
     <div class="workspace">
-      <main class="board-pane" id="main-pane" data-stage="idle">
-        <div id="empty-stage" class="empty-stage">
-          <p class="empty-kicker" data-i18n="app.title">Verba Orbis</p>
-          <h1 class="empty-title" data-i18n="hero.title">同一個意思，九種語言怎麼切</h1>
-          <p class="empty-desc" data-i18n="hero.desc">右側寫下詞語。先鎖一個義項，再看漢字圈與歐語怎麼切。</p>
+      <div id="rail-scrim" class="rail-scrim" hidden></div>
+      <aside class="side-rail">
+        <div id="rail-tabs" class="rail-tabs">
+          <button type="button" class="is-on" data-tab="grimoire" data-i18n="rail.grimoire">魔典</button>
+          <button type="button" data-tab="cabinet">
+            <span data-i18n="rail.cabinet">藥櫃</span>
+            <span id="cabinet-count">0</span>
+          </button>
         </div>
-        <div id="sense-stage" class="sense-stage"></div>
-        <div id="zones" class="board">
-          <section id="zone-a" class="board-cjk-wrap" aria-label="漢字圈"></section>
-          <section id="zone-b" class="board-eu-wrap" aria-label="歐語"></section>
+        <div class="rail-tools">
+          <button type="button" class="btn-ghost" id="clear-graph" data-i18n="rail.clearGraph">清空爐台</button>
         </div>
-      </main>
+        <div id="grimoire-pane" class="rail-pane">
+          <div id="grimoire-list"></div>
+        </div>
+        <div id="cabinet-pane" class="rail-pane hidden">
+          <div id="cabinet-list"></div>
+        </div>
+      </aside>
 
-      <aside class="side-rail" id="history-section">
-        <div class="rail-top">
-          <div class="brand">
-            <div class="brand-mark" aria-hidden="true"></div>
-            <div class="brand-text">
-              <span class="brand-title" data-i18n="app.title">Verba Orbis</span>
-              <span class="brand-sub" data-i18n="app.subtitle">詞的世界</span>
-            </div>
+      <main class="stage-wrap">
+        <div id="stage" class="stage is-idle">
+          <div class="circle-art" aria-hidden="true"></div>
+          <div class="stage-vignette"></div>
+          <canvas id="fx"></canvas>
+          <div id="world">
+            <svg id="links" xmlns="http://www.w3.org/2000/svg"></svg>
+            <div id="nodes"></div>
           </div>
-          <button type="button" class="text-btn" id="settings-btn" data-i18n="nav.settings">設定</button>
+          <p id="idle-hint" class="idle-hint">Solve et coagula</p>
+          <div id="crucible" class="crucible hidden">
+            <div class="crucible-core"></div>
+            <p class="crucible-hint">Solve et coagula</p>
+          </div>
         </div>
 
-        <div class="rail-search">
-          <div class="query-line">
+        <aside id="inspector" class="inspector" data-skin="parchment">
+          <div class="insp-rod insp-rod-top" aria-hidden="true"></div>
+          <span class="insp-knob insp-knob-l insp-knob-t" aria-hidden="true"></span>
+          <span class="insp-knob insp-knob-r insp-knob-t" aria-hidden="true"></span>
+          <button type="button" class="insp-grab" id="insp-grab" aria-expanded="false" aria-controls="inspector-body" data-i18n-aria="inspector.sheetToggle"></button>
+          <div class="insp-silk insp-silk-top" aria-hidden="true"></div>
+          <div class="insp-mount">
+            <div id="sheet-tabs" class="sheet-tabs" role="tablist" hidden></div>
+            <div id="inspector-body" class="inspector-body"></div>
+          </div>
+          <div class="insp-silk insp-silk-bot" aria-hidden="true"></div>
+          <div class="insp-rod insp-rod-bot" aria-hidden="true"></div>
+          <span class="insp-knob insp-knob-l insp-knob-b" aria-hidden="true"></span>
+          <span class="insp-knob insp-knob-r insp-knob-b" aria-hidden="true"></span>
+        </aside>
+
+        <div class="cast-dock">
+          <form id="cast-form" class="cast-bar">
             <input
-              id="query-input"
-              class="search-input"
+              id="word-input"
               type="text"
               autocomplete="off"
               spellcheck="false"
               autocapitalize="off"
-              data-i18n-placeholder="search.placeholder"
-              placeholder="寫下詞語或概念…"
+              data-i18n-placeholder="cast.placeholder"
+              placeholder="投入一個詞…"
             >
-            <button type="button" class="btn-primary" id="compare-btn" data-i18n="search.compare">比較</button>
-          </div>
-          <div id="lang-chips" class="lang-chips" role="toolbar" aria-label="來源語"></div>
-          <p id="lang-hint" class="lang-hint hidden"></p>
-          <div id="status-bar" class="status-bar" role="status"></div>
-          <div id="sense-dock" class="sense-dock"></div>
+            <button type="submit" class="btn-cast" id="cast-btn">
+              <span class="cast-full" data-i18n="cast.submit">投入爐中</span>
+              <span class="cast-short" data-i18n="cast.submitShort">投入</span>
+            </button>
+          </form>
+          <div id="status" class="status" role="status"></div>
         </div>
-
-        <div class="rail-log">
-          <div class="history-head">
-            <h2 data-i18n="history.title">查詢紀錄</h2>
-            <button type="button" class="text-btn danger" id="clear-history" data-i18n="history.clear">清空</button>
-          </div>
-          <input
-            id="history-filter"
-            class="history-filter"
-            type="search"
-            data-i18n-placeholder="history.filter"
-            placeholder="篩選單字…"
-          >
-          <div id="history-list" class="history-list"></div>
-        </div>
-      </aside>
+      </main>
     </div>
   </div>
 
-  <div id="settings-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true">
-    <div class="modal">
-      <div class="modal-head">
-        <h2 data-i18n="settings.title">設定</h2>
-        <button type="button" class="text-btn" id="settings-close">關閉</button>
-      </div>
+  <audio id="furnace-bed" loop preload="auto" src="audio/alchemists-dawn.mp3"></audio>
 
-      <div class="modal-section" style="margin-top:0;padding-top:0;border-top:none">
-        <h3 data-i18n="settings.ai">AI（自備金鑰）</h3>
-        <div class="field">
-          <label data-i18n="settings.apiKey">API Key</label>
-          <input id="setting-api-key" type="password" autocomplete="off" placeholder="xai-…">
-          <div class="hint" data-i18n="settings.apiKeyHint">僅存在本機瀏覽器，不會上傳。</div>
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="btn-ghost" id="btn-copy-radix-key" data-i18n="settings.copyRadixKey">從 Radix Multi 複製金鑰</button>
-        </div>
-        <div class="field">
-          <label data-i18n="settings.baseUrl">Base URL</label>
-          <input id="setting-base-url" type="url" placeholder="https://api.x.ai/v1">
-        </div>
-        <div class="field">
-          <label data-i18n="settings.model">Model</label>
-          <input id="setting-model" type="text" placeholder="grok-4.6 或 grok-4.5">
-          <div class="hint">xAI 常用：<code>grok-4.6</code>、<code>grok-4.5</code>。以 console.x.ai 為準。</div>
-        </div>
-        <div class="field">
-          <label data-i18n="settings.reasoning">推理強度</label>
-          <select id="setting-reasoning">
-            <option value="low">低（本站預設）</option>
-            <option value="medium">中</option>
-            <option value="high">高</option>
-            <option value="xhigh">極高</option>
-          </select>
-          <div class="hint" data-i18n="settings.reasoningHint">Grok 4.6 預設高推理；本站預設低，以免筆記又慢又貴。</div>
-        </div>
-        <div class="field">
-          <label data-i18n="settings.ttsVoice">朗讀聲線（xAI TTS）</label>
-          <input id="setting-tts-voice" type="text" placeholder="helios">
-          <div class="hint" data-i18n="settings.ttsVoiceHint">點「朗讀」時產生語音；同字會快取。</div>
-        </div>
-        <div class="field">
-          <label data-i18n="settings.radixUrl">Radix Multi 網址（可選）</label>
-          <input id="setting-radix-url" type="url" placeholder="https://… 或相對路徑">
-          <div class="hint" data-i18n="settings.radixUrlHint">填了之後，歐語／韓日卡片可跳去拆形態。第一版不改 Radix。</div>
-        </div>
-      </div>
+  <div id="toast" class="toast" role="status"></div>
+  <div id="cab-ghost" aria-hidden="true"></div>
 
-      <div class="modal-section">
-        <h3 data-i18n="settings.data">資料</h3>
-        <p class="hint" data-i18n="settings.historyWarn">紀錄只存在本機，用久了可能變大。可匯出後再清空。</p>
-        <label class="check-row">
-          <input type="checkbox" id="setting-include-key">
-          <span data-i18n="settings.includeKey">匯出時包含 API Key（預設關）</span>
-        </label>
-        <div class="modal-actions">
-          <button type="button" class="btn-ghost" id="btn-export" data-i18n="settings.export">匯出 JSON</button>
-          <button type="button" class="btn-ghost" id="btn-import" data-i18n="settings.import">匯入 JSON</button>
-          <input id="import-file" type="file" accept="application/json,.json" class="hidden">
+  <div id="settings-overlay" class="modal-backdrop settings-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal settings-modal">
+      <header class="settings-head">
+        <div class="settings-title-row">
+          <h2 id="settings-title" data-i18n="settings.title">爐房設定</h2>
+          <p class="settings-kicker" data-i18n="settings.kicker">用左側索引標籤切換各項功能</p>
+        </div>
+        <button type="button" class="icon-btn settings-x" data-settings-close data-i18n-aria="settings.close" aria-label="關閉">×</button>
+      </header>
+      <div class="settings-layout">
+        <div id="settings-tabs" class="settings-tabs" role="tablist" aria-orientation="vertical" data-i18n-aria="settings.tabsLabel" aria-label="設定分類">
+          <button type="button" class="is-on" role="tab" id="set-tab-api" aria-selected="true" aria-controls="set-pane-api" data-set-tab="api" tabindex="0">
+            <span class="set-tab-name" data-i18n="settings.tabApi">煉金爐</span>
+            <span class="set-tab-hint" data-i18n="settings.tabApiHint">供應商、金鑰與模型</span>
+          </button>
+          <button type="button" role="tab" id="set-tab-voice" aria-selected="false" aria-controls="set-pane-voice" data-set-tab="voice" tabindex="-1">
+            <span class="set-tab-name" data-i18n="settings.tabVoice">朗讀</span>
+            <span class="set-tab-hint" data-i18n="settings.tabVoiceHint">點擊朗讀與聲線</span>
+          </button>
+          <button type="button" role="tab" id="set-tab-display" aria-selected="false" aria-controls="set-pane-display" data-set-tab="display" tabindex="-1">
+            <span class="set-tab-name" data-i18n="settings.tabDisplay">畫面</span>
+            <span class="set-tab-hint" data-i18n="settings.tabDisplayHint">文字大小</span>
+          </button>
+          <button type="button" role="tab" id="set-tab-audio" aria-selected="false" aria-controls="set-pane-audio" data-set-tab="audio" tabindex="-1">
+            <span class="set-tab-name" data-i18n="settings.tabAudio">音效</span>
+            <span class="set-tab-hint" data-i18n="settings.tabAudioHint">爐樂與煉金音效</span>
+          </button>
+          <button type="button" role="tab" id="set-tab-grimoire" aria-selected="false" aria-controls="set-pane-grimoire" data-set-tab="grimoire" tabindex="-1">
+            <span class="set-tab-name" data-i18n="settings.tabGrimoire">魔典</span>
+            <span class="set-tab-hint" data-i18n="settings.tabGrimoireHint">煉成紀錄</span>
+          </button>
+        </div>
+        <div class="settings-body">
+          <section id="set-pane-api" class="settings-pane" data-set-pane="api" role="tabpanel" aria-labelledby="set-tab-api">
+            <header class="pane-head">
+              <h3 data-i18n="settings.tabApi">煉金爐</h3>
+              <p data-i18n="settings.paneApiLead">選供應商、貼上金鑰並指定模型。三家金鑰分開保存在本機，不會寫進檔案。</p>
+            </header>
+            <div class="settings-split">
+              <div class="settings-card">
+                <div class="field">
+                  <label data-i18n="settings.provider">煉金爐供應商</label>
+                  <div id="provider-row" class="provider-row" role="tablist">
+                    <button type="button" class="provider-btn is-on" data-provider="grok">Grok</button>
+                    <button type="button" class="provider-btn" data-provider="deepseek">DeepSeek</button>
+                    <button type="button" class="provider-btn" data-provider="google">Google</button>
+                  </div>
+                  <div id="provider-hint" class="hint">xAI · console.x.ai</div>
+                </div>
+                <div class="field">
+                  <label for="set-key" data-i18n="settings.apiKey">API Key</label>
+                  <input id="set-key" type="password" autocomplete="off" placeholder="xai-…">
+                  <div class="hint" data-i18n="settings.apiKeyHint">三家金鑰分開保存。只存在本機，不會寫進檔案。</div>
+                </div>
+                <div class="field field-actions">
+                  <button type="button" class="icon-btn" id="copy-radix" data-i18n="settings.copyRadix">從 Radix Multi 複製金鑰</button>
+                </div>
+              </div>
+              <div class="settings-card">
+                <div class="settings-grid">
+                  <div class="field">
+                    <label for="set-model" data-i18n="settings.model">模型</label>
+                    <input id="set-model" type="text" list="model-presets" placeholder="grok-4.6">
+                    <datalist id="model-presets"></datalist>
+                  </div>
+                  <div class="field">
+                    <label for="set-effort" data-i18n="settings.effort">推理強度</label>
+                    <select id="set-effort">
+                      <option value="low" data-i18n="settings.effortLow">低（建議）</option>
+                      <option value="medium" data-i18n="settings.effortMed">中</option>
+                      <option value="high" data-i18n="settings.effortHigh">高</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="set-base" data-i18n="settings.baseUrl">Base URL</label>
+                  <input id="set-base" type="text" placeholder="https://api.x.ai/v1">
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="set-pane-voice" class="settings-pane hidden" data-set-pane="voice" role="tabpanel" aria-labelledby="set-tab-voice" hidden>
+            <header class="pane-head">
+              <h3 data-i18n="settings.tabVoice">朗讀</h3>
+              <p data-i18n="settings.paneVoiceLead">點爐台上的詞或語素時，可用瀏覽器聲線或 Grok TTS 朗讀。</p>
+            </header>
+            <div class="settings-split">
+              <div class="settings-card">
+                <div class="field">
+                  <label class="check-row">
+                    <input id="set-click-speak" type="checkbox" checked>
+                    <span data-i18n="settings.clickSpeak">點擊詞彙時朗讀</span>
+                  </label>
+                  <div class="hint" data-i18n="settings.clickSpeakHint">羊皮紙上的朗讀鈕仍可隨時點。</div>
+                </div>
+              </div>
+              <div class="settings-card">
+                <div class="field">
+                  <label for="set-tts-engine" data-i18n="settings.ttsEngine">朗讀引擎</label>
+                  <select id="set-tts-engine">
+                    <option value="browser" data-i18n="settings.ttsBrowser">瀏覽器聲線（依法／英／日／韓語專案）</option>
+                    <option value="grok" data-i18n="settings.ttsGrok">Grok TTS（需 xAI 金鑰）</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="set-pane-display" class="settings-pane hidden" data-set-pane="display" role="tabpanel" aria-labelledby="set-tab-display" hidden>
+            <header class="pane-head">
+              <h3 data-i18n="settings.tabDisplay">畫面</h3>
+              <p data-i18n="settings.paneDisplayLead">即時調整羊皮紙、語素與魔典字級，保存後記住。</p>
+            </header>
+            <div class="settings-card">
+              <div class="field">
+                <label for="set-font-scale" data-i18n="settings.fontScale">文字大小</label>
+                <div class="font-scale-row" role="group" aria-label="文字大小預設">
+                  <button type="button" class="font-preset" data-font-preset="0.85" data-i18n="settings.fontS">小</button>
+                  <button type="button" class="font-preset is-on" data-font-preset="1" data-i18n="settings.fontM">中</button>
+                  <button type="button" class="font-preset" data-font-preset="1.2" data-i18n="settings.fontL">大</button>
+                  <button type="button" class="font-preset" data-font-preset="1.4" data-i18n="settings.fontXl">特大</button>
+                </div>
+                <div class="font-scale-meter">
+                  <input id="set-font-scale" type="range" min="80" max="150" step="5" value="100">
+                  <output id="font-scale-value" for="set-font-scale">100%</output>
+                </div>
+                <div class="font-preview" aria-hidden="true">
+                  <span class="font-preview-word">incroyable</span>
+                  <span class="font-preview-gloss" data-i18n="settings.fontPreviewGloss">難以置信的 · 語素結晶</span>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="set-pane-audio" class="settings-pane hidden" data-set-pane="audio" role="tabpanel" aria-labelledby="set-tab-audio" hidden>
+            <header class="pane-head">
+              <h3 data-i18n="settings.tabAudio">音效</h3>
+              <p data-i18n="settings.paneAudioLead">爐火氛圍樂與煉金操作音效可分開開關與調音量。</p>
+            </header>
+            <div class="settings-split">
+              <div class="settings-card">
+                <div class="field">
+                  <label class="check-row">
+                    <input id="set-ambient" type="checkbox" checked>
+                    <span data-i18n="settings.ambient">爐火氛圍樂</span>
+                  </label>
+                </div>
+                <div class="field">
+                  <label for="set-ambient-vol" data-i18n="settings.ambientVol">氛圍音量</label>
+                  <div class="vol-row">
+                    <input id="set-ambient-vol" type="range" min="0" max="100" value="55">
+                    <output id="ambient-vol-value" for="set-ambient-vol">55%</output>
+                  </div>
+                </div>
+              </div>
+              <div class="settings-card">
+                <div class="field">
+                  <label class="check-row">
+                    <input id="set-sfx" type="checkbox" checked>
+                    <span data-i18n="settings.sfx">煉金音效</span>
+                  </label>
+                </div>
+                <div class="field">
+                  <label for="set-sfx-vol" data-i18n="settings.sfxVol">音效音量</label>
+                  <div class="vol-row">
+                    <input id="set-sfx-vol" type="range" min="0" max="100" value="55">
+                    <output id="sfx-vol-value" for="set-sfx-vol">55%</output>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+          <section id="set-pane-grimoire" class="settings-pane hidden" data-set-pane="grimoire" role="tabpanel" aria-labelledby="set-tab-grimoire" hidden>
+            <header class="pane-head">
+              <h3 data-i18n="settings.tabGrimoire">魔典</h3>
+              <p data-i18n="settings.paneGrimoireLead">各語言分開保存。主介面可單筆刪除；此處一次清空該語言的全部煉成紀錄。</p>
+            </header>
+            <div class="settings-card">
+              <div id="grim-lang-list" class="grim-lang-list"></div>
+              <div class="field field-actions">
+                <button type="button" class="icon-btn" id="clear-all-history" data-i18n="settings.clearAllLangs">清空全部語言</button>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
-
-      <div class="modal-actions" style="margin-top:1.25rem">
-        <button type="button" class="btn-primary" id="save-settings" style="height:2.5rem">
-          <span data-i18n="settings.save">儲存設定</span>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <div id="crop-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="crop-title">
-    <div class="modal crop-sheet">
-      <div class="modal-head">
-        <h2 id="crop-title">裁切背景</h2>
-        <button type="button" class="text-btn" id="crop-cancel" data-i18n="crop.cancel">取消</button>
-      </div>
-      <p class="crop-hint" id="crop-hint" data-i18n="crop.hint">拖曳選框移動，角落拖曳縮放。比例已對齊這張卡。</p>
-      <div class="crop-stage" id="crop-stage">
-        <img id="crop-image" alt="">
-        <div class="crop-box" id="crop-box" hidden>
-          <i data-handle="nw"></i>
-          <i data-handle="ne"></i>
-          <i data-handle="sw"></i>
-          <i data-handle="se"></i>
-        </div>
-      </div>
-      <div class="modal-actions crop-actions">
-        <button type="button" class="btn-ghost" id="crop-clear" data-i18n="crop.clear">恢復預設</button>
-        <button type="button" class="btn-primary" id="crop-apply" data-i18n="crop.apply">套用此裁切</button>
+      <div class="modal-actions">
+        <button type="button" class="icon-btn" id="settings-close" data-settings-close data-i18n="settings.close">關閉</button>
+        <button type="button" class="btn-gold" id="settings-save" data-i18n="settings.save">保存</button>
       </div>
     </div>
   </div>
@@ -172,12 +309,19 @@
   <script src="config.js"></script>
   <script src="js/i18n.js"></script>
   <script src="js/schema.js"></script>
+  <script src="js/langs.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/prompts.js"></script>
+  <script src="js/demo.js"></script>
+  <script src="js/demo-en.js"></script>
+  <script src="js/demo-ja.js"></script>
+  <script src="js/demo-ko.js"></script>
   <script src="js/ai.js"></script>
   <script src="js/tts.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/fx.js"></script>
+  <script src="js/graph.js"></script>
   <script src="js/ui.js"></script>
-  <script src="js/crop.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

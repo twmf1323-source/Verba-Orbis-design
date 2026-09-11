@@ -1,122 +1,79 @@
-# Verba Orbis · 詞的世界
+# Verba Athanor · 詞的煉金爐
 
-同一個意思，在八種語言裡怎麼切。
+把一個法語或英語詞投入爐中。它會結晶成最小語素；點語素可以：
 
-輸入單字、漢字詞或概念 → **先鎖定一個義項** → 依固定順序寫筆記：
+- **蒸餾** — 回推更早的詞根（古法語、拉丁、希臘、PIE）
+- **派生** — 看共用這枚語素的法語詞
+- **複合** — 看合劑與複合構詞
 
-**中文 → 韓語 → 日語**（漢字圈 + 三角對照）  
-**英語 → 德語 → 西班牙語 → 法語 → 義大利語**（歐語圈 + 同源網）
+這不是 Verba Radix 的換皮。Radix 是多語言詞根**筆記**；Athanor 是詞源的**煉金術桌台**（同一爐、多個語言專案）。頂部可切 **Français / English / 日本語 / 한국어**。日語是仙氣丹房；韓語是書院月下與月白瓷。兩者背景圖不同，音樂同為《Beneath the Sacred Peak》。
 
-這不是詞源拆解。形態／漢字拆解請用姐妹站 [Verba Radix Multi](../verba-radix-multi/)。
+## 怎麼開
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-indigo.svg)](LICENSE)
+雙擊 `index.html`，或：
 
----
+```powershell
+cd C:\Users\Gary\verba-athanor
+python -m http.server 8765
+```
 
-## 和 Radix Multi 的差別
+然後開 http://127.0.0.1:8765
 
-| | Radix Multi | Orbis |
-|---|---|---|
-| 問題 | 這個**詞形**怎麼拆？ | 這個**意義**在八語怎麼坐？ |
-| 單位 | 一種語言專案裡的一個詞 | 一個鎖定義，橫跨八語 |
-| 存檔 | `radix-multi.*` | `orbis.*` |
-| 金鑰 | `radix-multi.apiKey` | `orbis.apiKey`（設定裡可一鍵複製） |
+## 不放金鑰也能玩
 
-兩個站互不覆寫對方的 localStorage。
+內建示範配方（不呼叫 API）：
 
----
+- 法語：`incroyable` · `parapluie` · `souvenir` · `bibliothèque` · `défaire` · `aujourd'hui`
+- 英語：`unbelievable` · `sunflower` · `remember` · `bookshelf` · `undo` · `today`
+- 日語：`信じられない` · `雨傘` · `思い出` · `図書館` · `取り消す` · `今日`
+- 韓語：`불가능` · `우산` · `추억` · `도서관` · `취소하다` · `오늘`
 
-## 快速開始
+點底部封印，或自己輸入這些詞。
 
-1. 雙擊 `index.html`（或用本機靜態伺服器）
-2. 設定 → 填入 [xAI](https://console.x.ai) API Key
-3. 輸入「鄉愁」或「愛」→ 比較 → 選定一個義項
+## 任意詞（依法／英語專案）
 
-`/` 聚焦搜尋框；Escape 關閉設定。
+爐房設定可選三家，金鑰分開保存：
 
-> API Key 只存在瀏覽器 `orbis.apiKey`，不會進 repo。
+| 供應商 | 金鑰 | 預設模型 | Base URL |
+|---|---|---|---|
+| **Grok**（xAI） | [console.x.ai](https://console.x.ai) | `grok-4.6` | `https://api.x.ai/v1` |
+| **DeepSeek** | [platform.deepseek.com](https://platform.deepseek.com/api_keys) | `deepseek-v4-flash` | `https://api.deepseek.com` |
+| **Google** | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | `gemini-3.8-flash` | Gemini OpenAI 相容端點 |
 
-若瀏覽器擋 `file://` 對 `api.x.ai` 的 CORS，改用本機伺服器開啟即可（和 Radix 一樣）。
+貼上金鑰時會依前綴自動判斷（`xai-` / `sk-` / `AIza`）。也可「從 Radix Multi 複製 Grok 金鑰」。推理強度建議 **低**。金鑰只在 `localStorage`（`athanor.keys`），不會進 repo。
 
----
+語源是模型知識，畫面上標「僅供參考」。若某家從瀏覽器被 CORS 擋住，換一家，或用本機靜態伺服器開啟。
 
-## 模型
+## 操作
 
-| 設定 | 預設 |
+| 動作 | 效果 |
 |---|---|
-| Base URL | `https://api.x.ai/v1` |
-| Model | `grok-4.6`（可改 `grok-4.5`） |
-| 推理強度 | **低**（API 預設是高，本站刻意壓低以免又慢又貴） |
+| 投入爐中 | 新的一爐，重置爐台 |
+| 點詞／語素／派生 | 朗讀（瀏覽器法語聲線，可改 Grok TTS） |
+| 爐樂／音效 | 背景曲 *The Alchemist's Dawn*（循環）＋投入／結晶／蒸餾等音效（可關） |
+| 點語素後的羊皮紙操作 | 蒸餾／派生／複合 |
+| 點析出的詞 → 投入爐中 | 把該詞當下一爐 |
+| 拖曳節點／滾輪 | 移動、縮放星圖 |
+| 藥櫃 | 收集過的語素。點選＝投入新的一爐；拖到爐上的詞／語素（或點「合」）＝看兩枚有無複合詞 |
+| 魔典 | 本機煉成紀錄 |
 
-每次查詢三次呼叫：列義項 → 漢字圈 → 歐語圈。漢字圈會先上畫面。
+## 與 Verba 系列
 
-約略費用（低推理）：一次完整查詢 **$0.08–0.13**，漢字圈約 20–40 秒出現。
+| | Radix Multi | Orbis | **Athanor** |
+|---|---|---|---|
+| 問題 | 這個詞怎麼拆？ | 這個意思在八語裡是什麼？ | 這枚語素還能煉出什麼、從哪來？ |
+| 範圍 | 多語言專案 | 八語對照 | 法語／英語專案（同一站） |
+| 金鑰 | `radix-multi.apiKey` | `orbis.apiKey` | `athanor.apiKey` |
 
----
-
-## 本機資料
-
-| Key | 內容 |
-|---|---|
-| `orbis.settings` | 模型、推理、Radix 網址 |
-| `orbis.apiKey` | 金鑰 |
-| `orbis.history` | 依「詞 + 義項」存的筆記，不設上限 |
-| `orbis.meta` | 雜項 |
-
-歷史主鍵是客戶端算的 `senseKey`（詞性 + 中文義），不是模型回傳的 `s1`。
-
-匯出預設**不含**金鑰。匯入會拒絕 `verba-radix-multi` 備份。
-
-同一個查詢若歷史裡只有一筆，會直接打開上次筆記；仍可「更換義項」。
-
----
-
-## 筆記密度（範例：鄉愁）
-
-鎖定「對故鄉的思念之情」時，預期大約是：
-
-- **中** 鄉愁 `xiāngchóu`（書面）／口語「想家」
-- **韓** 향수（鄕愁，한자어）；고유어 그리움 較寬；另有「香水」一形
-- **日** 郷愁（漢語・音讀）偏書面；日常 懐かしい／ホームシック
-- **英** homesickness 較窄、nostalgia 較寬 → `split`
-- **德** Heimweh ≈；Nostalgie 較寬
-- **西** añoranza / morriña / nostalgia
-- **法** mal du pays；nostalgie 較寬
-- **義** nostalgia 較寬；smania di casa 近似
-
-拼音只用調號（`xiāngchóu`），不用 `xiang1chou2`。
-
----
-
-## 專案結構
+## 結構
 
 ```
-verba-orbis/
+verba-athanor/
 ├── index.html
-├── config.js / config.example.js
+├── config.js
 ├── css/styles.css
-├── js/
-│   ├── i18n.js
-│   ├── schema.js      # 正規化、來源語、senseKey
-│   ├── storage.js     # orbis.*
-│   ├── prompts.js
-│   ├── ai.js          # 三次呼叫 + JSON 修復
-│   ├── ui.js
-│   └── app.js
-├── LICENSE
-└── README.md
+├── img/           # 煉金爐、變陣、實驗室
+└── js/            # schema · prompts · demo · ai · graph · fx · ui · app
 ```
 
-零建置。腳本順序寫死在 `index.html`。
-
----
-
-## 隱私
-
-- 瀏覽器直接呼叫 xAI；金鑰只在本機。
-- 沒有雲端、沒有帳號、沒有遙測。
-- 筆記標「AI 產生 · 僅供參考」——語源可能有誤。
-
----
-
-Made for language learners · Verba series · Orbis
+零建置。MIT。

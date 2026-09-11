@@ -1,30 +1,31 @@
-/**
- * Verba Orbis localStorage — orbis.* only (file:// safe)
- */
 (function (global) {
-  const VO = (global.VerbaOrbis = global.VerbaOrbis || {});
+  const VA = (global.VerbaAthanor = global.VerbaAthanor || {});
+  const S = () => VA.schema;
 
   const KEYS = {
-    settings: 'orbis.settings',
-    apiKey: 'orbis.apiKey',
-    history: 'orbis.history',
-    meta: 'orbis.meta',
-    cardBgs: 'orbis.cardBgs',
+    settings: 'athanor.settings',
+    apiKey: 'athanor.apiKey',
+    keys: 'athanor.keys',
+    history: 'athanor.history',
+    cabinet: 'athanor.cabinet',
+    meta: 'athanor.meta',
   };
 
   const DEFAULT_SETTINGS = {
     locale: 'zh-TW',
+    provider: 'grok',
     baseUrl: 'https://api.x.ai/v1',
     model: 'grok-4.6',
     reasoningEffort: 'low',
-    radixMultiUrl: '',
-    ttsVoiceId: 'helios',
-    historyCap: null,
+    clickSpeak: true,
+    ttsEngine: 'browser',
+    lang: 'fr',
+    ambientOn: true,
+    sfxOn: true,
+    ambientVol: 0.55,
+    sfxVol: 0.55,
+    fontScale: 1,
   };
-
-  function schema() {
-    return VO.schema;
-  }
 
   function safeParse(raw, fallback) {
     try {
@@ -39,272 +40,235 @@
     return `id_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   }
 
-  function getSettings() {
+  function loadSettings() {
     const stored = safeParse(localStorage.getItem(KEYS.settings), {});
-    return { ...DEFAULT_SETTINGS, ...stored };
-  }
-
-  function saveSettings(partial) {
-    const next = { ...getSettings(), ...partial };
-    try {
-      localStorage.setItem(KEYS.settings, JSON.stringify(next));
-    } catch (e) {
-      if (isQuota(e)) throw new Error('QUOTA');
-      throw e;
+    const merged = { ...DEFAULT_SETTINGS, ...stored };
+    if (stored.fontScaleV !== 2) {
+      const old = Number(stored.fontScale);
+      if (Number.isFinite(old) && Math.abs(old - 1) > 0.02) {
+        merged.fontScale = Math.min(1.5, Math.max(0.8, Math.round((old / 1.3) * 20) / 20));
+      } else {
+        merged.fontScale = 1;
+      }
+      merged.fontScaleV = 2;
+      localStorage.setItem(KEYS.settings, JSON.stringify(merged));
+    } else {
+      const n = Number(merged.fontScale);
+      merged.fontScale = Number.isFinite(n) ? Math.min(1.5, Math.max(0.8, n)) : 1;
     }
-    return next;
+    return merged;
   }
 
-  function getApiKey() {
-    return localStorage.getItem(KEYS.apiKey) || '';
+  function saveSettings(next) {
+    const merged = { ...loadSettings(), ...next };
+    localStorage.setItem(KEYS.settings, JSON.stringify(merged));
+    return merged;
   }
 
-  function saveApiKey(key) {
-    const v = String(key || '').trim();
-    if (v) localStorage.setItem(KEYS.apiKey, v);
+  function getKeys() {
+    const bag = safeParse(localStorage.getItem(KEYS.keys), {});
+    const legacy = localStorage.getItem(KEYS.apiKey) || '';
+    if (legacy && !bag.grok) bag.grok = legacy;
+    return bag;
+  }
+
+  function saveKeys(bag) {
+    localStorage.setItem(KEYS.keys, JSON.stringify(bag));
+    if (bag.grok) localStorage.setItem(KEYS.apiKey, bag.grok);
     else localStorage.removeItem(KEYS.apiKey);
+    return bag;
   }
 
-  function copyRadixApiKey() {
-    const src = localStorage.getItem('radix-multi.apiKey') || '';
-    if (!src.trim()) return { ok: false, reason: 'empty' };
-    saveApiKey(src.trim());
-    return { ok: true };
+  function getApiKey(provider) {
+    const p = provider || loadSettings().provider || 'grok';
+    const bag = getKeys();
+    return (bag[p] || '').trim();
   }
 
-  function getMeta() {
-    return safeParse(localStorage.getItem(KEYS.meta), {});
+  function setApiKey(key, provider) {
+    const p = provider || loadSettings().provider || 'grok';
+    const bag = getKeys();
+    const v = String(key || '').trim();
+    if (v) bag[p] = v;
+    else delete bag[p];
+    saveKeys(bag);
+    return v;
   }
 
-  function saveMeta(partial) {
-    const next = { ...getMeta(), ...partial };
-    localStorage.setItem(KEYS.meta, JSON.stringify(next));
-    return next;
+  function copyKeyFromRadix() {
+    const candidates = ['radix-multi.apiKey', 'radix-fr.apiKey', 'orbis.apiKey', 'radix.apiKey'];
+    for (const k of candidates) {
+      const v = (localStorage.getItem(k) || '').trim();
+      if (v) {
+        setApiKey(v, 'grok');
+        return { ok: true, from: k };
+      }
+    }
+    return { ok: false };
   }
 
-  function isQuota(e) {
-    return e && (e.name === 'QuotaExceededError' || e.code === 22 || /quota/i.test(e.message || ''));
+  function langId() {
+    return loadSettings().lang || 'fr';
   }
 
-  function loadHistory() {
-    const list = safeParse(localStorage.getItem(KEYS.history), []);
-    return Array.isArray(list) ? list : [];
-  }
-
-  function persistHistory(list) {
-    try {
-      localStorage.setItem(KEYS.history, JSON.stringify(list));
-    } catch (e) {
-      if (isQuota(e)) throw new Error('QUOTA');
-      throw e;
+  function migrateLangBuckets() {
+    const oldH = localStorage.getItem(KEYS.history);
+    if (oldH && !localStorage.getItem(KEYS.history + '.fr')) {
+      localStorage.setItem(KEYS.history + '.fr', oldH);
+    }
+    const oldC = localStorage.getItem(KEYS.cabinet);
+    if (oldC && !localStorage.getItem(KEYS.cabinet + '.fr')) {
+      localStorage.setItem(KEYS.cabinet + '.fr', oldC);
     }
   }
 
-  function historyKey(normalized, senseKey) {
-    return `${normalized}::${senseKey}`;
+  function historyKey(lang) {
+    return KEYS.history + '.' + (lang || langId());
   }
 
-  function listHistory() {
-    return loadHistory().slice().sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+  function cabinetKey(lang) {
+    return KEYS.cabinet + '.' + (lang || langId());
   }
 
-  function listByNormalized(normalized) {
-    const n = String(normalized || '');
-    return loadHistory().filter((r) => r && r.normalized === n);
+  function loadHistory(lang) {
+    migrateLangBuckets();
+    return safeParse(localStorage.getItem(historyKey(lang)), []);
   }
 
-  function getBySense(normalized, senseKey) {
-    const k = historyKey(normalized, senseKey);
-    return loadHistory().find((r) => r && historyKey(r.normalized, r.senseKey) === k) || null;
+  function saveHistory(list, lang) {
+    localStorage.setItem(historyKey(lang), JSON.stringify(list));
+    return list;
   }
 
-  function mergeResult(prevResult, nextResult) {
-    const prev = prevResult && typeof prevResult === 'object' ? prevResult : {};
-    const next = nextResult && typeof nextResult === 'object' ? nextResult : {};
-    const warnings = Array.isArray(next.warnings) ? next.warnings.slice() : [];
-    let zoneA = next.zoneA != null ? next.zoneA : prev.zoneA || null;
-    let zoneB = next.zoneB;
-    if (zoneB == null && prev.zoneB) {
-      zoneB = prev.zoneB;
-      if (!warnings.includes('kept-prior-zoneB')) warnings.push('kept-prior-zoneB');
-    }
-    if (zoneA == null && prev.zoneA) zoneA = prev.zoneA;
-    return {
-      schemaVersion: 1,
-      query: next.query || prev.query || '',
-      sourceLang: next.sourceLang || prev.sourceLang || '',
-      lockedSense: next.lockedSense || prev.lockedSense || null,
-      zoneA,
-      zoneB: zoneB || null,
-      generatedAt: next.generatedAt || prev.generatedAt || new Date().toISOString(),
-      model: next.model || prev.model || '',
-      modelA: next.modelA || prev.modelA,
-      modelB: next.modelB || prev.modelB,
-      warnings,
-    };
-  }
-
-  function upsertHistory(record) {
-    if (!record || !record.normalized || !record.senseKey) return null;
-    const list = loadHistory();
-    const k = historyKey(record.normalized, record.senseKey);
-    const idx = list.findIndex((r) => r && historyKey(r.normalized, r.senseKey) === k);
+  function upsertHistory(analysis, lang) {
+    const normalized = S().normalizeQuery(analysis.lemma || analysis.word || analysis.query);
+    if (!normalized) return loadHistory(lang);
     const now = new Date().toISOString();
-    if (idx >= 0) {
-      const prev = list[idx];
-      const merged = {
-        ...prev,
-        ...record,
-        id: prev.id,
-        createdAt: prev.createdAt || now,
-        updatedAt: now,
-        result: mergeResult(prev.result, record.result),
-      };
-      list[idx] = merged;
-      persistHistory(list);
-      return merged;
-    }
-    const created = {
-      id: record.id || makeId(),
-      query: record.query || '',
-      normalized: record.normalized,
-      sourceLang: record.sourceLang || '',
-      senseKey: record.senseKey,
-      senseId: record.senseId || '',
-      senseGloss: record.senseGloss || '',
-      sensePos: record.sensePos || '',
-      createdAt: now,
+    const list = loadHistory(lang);
+    const idx = list.findIndex((row) => row.normalized === normalized);
+    const row = {
+      id: idx >= 0 ? list[idx].id : makeId(),
+      query: analysis.query || analysis.word,
+      normalized,
+      lemma: analysis.lemma || analysis.word,
+      glossZh: analysis.glossZh || '',
+      pos: analysis.pos || '',
+      createdAt: idx >= 0 ? list[idx].createdAt : now,
       updatedAt: now,
-      result: record.result || null,
+      analysis,
     };
-    list.push(created);
-    persistHistory(list);
-    return created;
+    if (idx >= 0) list.splice(idx, 1);
+    list.unshift(row);
+    return saveHistory(list, lang);
   }
 
-  function deleteHistory(id) {
-    const next = loadHistory().filter((r) => r && r.id !== id);
-    persistHistory(next);
-    const meta = getMeta();
-    if (meta.lastHistoryId === id) {
-      try {
-        saveMeta({ lastHistoryId: '' });
-      } catch (_) {}
+  function getHistoryByNormalized(normalized, lang) {
+    return loadHistory(lang).find((row) => row.normalized === normalized) || null;
+  }
+
+  function removeHistory(normalized) {
+    const key = S().normalizeQuery(normalized);
+    if (!key) return loadHistory();
+    return saveHistory(loadHistory().filter((row) => row.normalized !== key));
+  }
+
+  function clearHistory(lang) {
+    saveHistory([], lang);
+  }
+
+  function clearAllHistory() {
+    const ids = (VA.langs?.list?.() || []).map((p) => p.id);
+    const langs = ids.length ? ids : ['fr', 'en', 'ja', 'ko'];
+    langs.forEach((id) => clearHistory(id));
+  }
+
+  function historyCount(lang) {
+    return loadHistory(lang).length;
+  }
+
+  function loadCabinet(lang) {
+    migrateLangBuckets();
+    return safeParse(localStorage.getItem(cabinetKey(lang)), []);
+  }
+
+  function saveCabinet(list, lang) {
+    localStorage.setItem(cabinetKey(lang), JSON.stringify(list));
+    return list;
+  }
+
+  function collectMorphemes(analysis, lang) {
+    const cabinet = loadCabinet(lang);
+    const added = [];
+    const now = new Date().toISOString();
+    for (const m of analysis.morphemes || []) {
+      const id = m.id || S().mintMorphId(m.surface, m.kind);
+      let row = cabinet.find((x) => x.id === id);
+      if (!row) {
+        row = {
+          id,
+          surface: m.surface,
+          kind: m.kind,
+          meaningZh: m.meaningZh,
+          meaningFr: m.meaningFr || '',
+          origin: m.origin,
+          originForm: m.originForm || '',
+          originPath: m.originPath || '',
+          noteZh: m.noteZh || '',
+          firstSeen: now,
+          count: 0,
+          words: [],
+        };
+        cabinet.unshift(row);
+        added.push(row);
+      }
+      row.count = (row.count || 0) + 1;
+      row.updatedAt = now;
+      if (m.originPath && !row.originPath) row.originPath = m.originPath;
+      if (m.originForm && !row.originForm) row.originForm = m.originForm;
+      if (m.noteZh && !row.noteZh) row.noteZh = m.noteZh;
+      const lemma = analysis.lemma || analysis.word;
+      if (lemma && !row.words.includes(lemma)) row.words.push(lemma);
+      if (row.words.length > 12) row.words = row.words.slice(-12);
     }
-    return next;
+    saveCabinet(cabinet, lang);
+    return { cabinet, added };
   }
 
-  function clearHistory() {
-    persistHistory([]);
-  }
-
-  function exportData({ includeApiKey } = {}) {
-    const settings = getSettings();
-    return {
-      app: 'verba-orbis',
-      version: 1,
-      exportedAt: new Date().toISOString(),
-      settings: {
-        locale: settings.locale,
-        baseUrl: settings.baseUrl,
-        model: settings.model,
-        reasoningEffort: settings.reasoningEffort,
-        radixMultiUrl: settings.radixMultiUrl,
-        historyCap: settings.historyCap,
-      },
-      apiKey: includeApiKey ? getApiKey() : '',
-      history: loadHistory(),
-    };
-  }
-
-  function importData(payload) {
-    if (!payload || typeof payload !== 'object') throw new Error('INVALID');
-    if (payload.app === 'verba-radix-multi') throw new Error('WRONG_APP');
-    if (payload.app && payload.app !== 'verba-orbis') throw new Error('WRONG_APP');
-    if (payload.settings && typeof payload.settings === 'object') {
-      const { apiKey: _drop, ...rest } = payload.settings;
-      saveSettings(rest);
+  function bootstrapConfig() {
+    const cfg = global.VERBA_ATHANOR_CONFIG || {};
+    const s = loadSettings();
+    const patch = {};
+    if (!s.baseUrl && cfg.DEFAULT_BASE_URL) patch.baseUrl = cfg.DEFAULT_BASE_URL;
+    if (!s.model && cfg.DEFAULT_MODEL) patch.model = cfg.DEFAULT_MODEL;
+    if (!s.reasoningEffort && cfg.DEFAULT_REASONING_EFFORT) {
+      patch.reasoningEffort = cfg.DEFAULT_REASONING_EFFORT;
     }
-    if (payload.apiKey && String(payload.apiKey).trim()) {
-      saveApiKey(payload.apiKey);
+    if (Object.keys(patch).length) return saveSettings(patch);
+    if (cfg.DEFAULT_BASE_URL && s.baseUrl === DEFAULT_SETTINGS.baseUrl) {
+      /* keep */
     }
-    if (Array.isArray(payload.history)) {
-      persistHistory(payload.history);
-    }
+    return s;
   }
 
-  const CARD_BG_LANGS = ['zh', 'ko', 'ja', 'en', 'de', 'es', 'fr', 'it', 'la'];
-
-  function getCardBgs() {
-    const raw = safeParse(localStorage.getItem(KEYS.cardBgs), {});
-    return raw && typeof raw === 'object' ? raw : {};
-  }
-
-  function getCardBg(lang) {
-    const map = getCardBgs();
-    const url = map[lang];
-    return typeof url === 'string' && url.indexOf('data:image/') === 0 ? url : '';
-  }
-
-  function setCardBg(lang, dataUrl) {
-    if (!CARD_BG_LANGS.includes(lang)) return getCardBgs();
-    const next = { ...getCardBgs() };
-    if (dataUrl) next[lang] = dataUrl;
-    else delete next[lang];
-    try {
-      localStorage.setItem(KEYS.cardBgs, JSON.stringify(next));
-    } catch (e) {
-      if (isQuota(e)) throw new Error('QUOTA');
-      throw e;
-    }
-    return next;
-  }
-
-  function clearCardBg(lang) {
-    return setCardBg(lang, '');
-  }
-
-  function radixHref(lang, headword) {
-    const settings = getSettings();
-    const cfg = global.VERBA_ORBIS_CONFIG || {};
-    const base = settings.radixMultiUrl || cfg.RADIX_MULTI_URL || '';
-    if (!base || !headword || lang === 'zh' || lang === 'la') return '';
-    try {
-      const u = new URL(base, typeof location !== 'undefined' ? location.href : 'https://example.invalid/');
-      u.searchParams.set('lang', lang);
-      u.searchParams.set('q', headword);
-      return u.toString();
-    } catch {
-      return '';
-    }
-  }
-
-  VO.storage = {
+  VA.storage = {
     KEYS,
     DEFAULT_SETTINGS,
     makeId,
-    getSettings,
+    loadSettings,
     saveSettings,
+    getKeys,
     getApiKey,
-    saveApiKey,
-    copyRadixApiKey,
-    getMeta,
-    saveMeta,
-    listHistory,
-    listByNormalized,
-    getBySense,
+    setApiKey,
+    copyKeyFromRadix,
+    loadHistory,
     upsertHistory,
-    deleteHistory,
+    getHistoryByNormalized,
+    removeHistory,
     clearHistory,
-    exportData,
-    importData,
-    getCardBgs,
-    getCardBg,
-    setCardBg,
-    clearCardBg,
-    radixHref,
-    normalizeQuery(q) {
-      return schema().normalizeQuery(q);
-    },
+    clearAllHistory,
+    historyCount,
+    loadCabinet,
+    collectMorphemes,
+    bootstrapConfig,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

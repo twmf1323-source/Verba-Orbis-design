@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>豎屏草案 · Verba Athanor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Cormorant+Garamond:ital,wght@0,600;0,700;1,500&family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --gold: #d4af37;
+      --gold-hot: #f3e2a0;
+      --ink: #f3e6c8;
+      --ink-dim: #c4b089;
+      --void: #080605;
+      --parchment: #efe4c8;
+      --parchment-ink: #1c2438;
+      --blue: #2d4a8a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: "Noto Sans TC", system-ui, sans-serif;
+      background: #0b0908;
+      color: var(--ink);
+      padding: 28px 20px 64px;
+    }
+    h1 {
+      font-family: Cinzel, "Noto Serif TC", serif;
+      letter-spacing: 0.16em;
+      font-size: 15px;
+      color: var(--gold-hot);
+      margin: 0 0 6px;
+    }
+    .lead {
+      max-width: 720px;
+      color: var(--ink-dim);
+      line-height: 1.65;
+      font-size: 14px;
+      margin: 0 0 22px;
+    }
+    .notes {
+      display: grid;
+      gap: 8px;
+      max-width: 720px;
+      margin-bottom: 28px;
+      font-size: 13px;
+      color: var(--ink-dim);
+      line-height: 1.55;
+    }
+    .notes b { color: var(--gold-hot); font-weight: 600; }
+    .switcher {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 22px;
+    }
+    .switcher button {
+      font: inherit;
+      border: 1px solid rgba(212, 177, 90, 0.35);
+      background: #16110c;
+      color: var(--ink-dim);
+      padding: 8px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .switcher button.is-on {
+      background: linear-gradient(180deg, var(--gold-hot), var(--gold));
+      color: #1a1208;
+      font-weight: 700;
+      border-color: transparent;
+    }
+    .stage-board {
+      display: flex;
+      justify-content: center;
+    }
+    .phone {
+      width: 390px;
+      height: 844px;
+      border-radius: 40px;
+      padding: 12px;
+      background: #1a140f;
+      border: 1px solid rgba(212, 177, 90, 0.35);
+      box-shadow: 0 30px 80px rgba(0,0,0,.55);
+      position: relative;
+    }
+    .phone-screen {
+      height: 100%;
+      border-radius: 30px;
+      overflow: hidden;
+      position: relative;
+      background:
+        radial-gradient(900px 520px at 50% 30%, rgba(45, 74, 138, 0.22), transparent 55%),
+        linear-gradient(180deg, rgba(12, 16, 32, 0.42), rgba(8, 8, 16, 0.9)),
+        url("../img/fr-lab.jpg") center / cover no-repeat;
+      color: var(--ink);
+    }
+    .notch {
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 118px;
+      height: 22px;
+      background: #0a0806;
+      border-radius: 14px;
+      z-index: 8;
+    }
+    .top {
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 26px 12px 0;
+      position: relative;
+      z-index: 5;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .mark {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      border: 1px solid var(--gold);
+      background: #0b0908 url("../img/fr-circle.jpg") center / 160% no-repeat;
+    }
+    .brand small {
+      display: block;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      font-size: 9px;
+      color: var(--gold-hot);
+      font-family: Cinzel, serif;
+    }
+    .brand span { font-size: 11px; color: var(--ink-dim); }
+    .top-actions { display: flex; gap: 6px; }
+    .icon {
+      min-width: 36px;
+      height: 32px;
+      border-radius: 999px;
+      border: 1px solid rgba(212,177,90,.35);
+      background: rgba(12,9,7,.55);
+      color: var(--ink);
+      font-size: 12px;
+      padding: 0 10px;
+    }
+    .langs {
+      display: flex;
+      gap: 4px;
+      justify-content: center;
+      padding: 6px 12px 0;
+      position: relative;
+      z-index: 5;
+    }
+    .langs i {
+      font-style: normal;
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      color: var(--ink-dim);
+    }
+    .langs i.on {
+      background: linear-gradient(180deg, var(--gold), var(--blue));
+      color: #f7f1dc;
+    }
+    .arena {
+      position: absolute;
+      inset: 88px 0 210px;
+    }
+    .circle {
+      position: absolute;
+      left: 50%;
+      top: 46%;
+      width: min(78vw, 300px);
+      aspect-ratio: 1;
+      transform: translate(-50%, -50%);
+      background: url("../img/fr-circle.jpg") center / contain no-repeat;
+      opacity: .48;
+      mix-blend-mode: screen;
+      border-radius: 50%;
+    }
+    .crystal {
+      position: absolute;
+      left: 50%;
+      top: 46%;
+      transform: translate(-50%, -50%);
+      width: 168px;
+      height: 168px;
+      border-radius: 50%;
+      border: 1px solid var(--gold);
+      background: radial-gradient(circle at 40% 30%, #3a2c1d, #120e0a 70%);
+      box-shadow: 0 0 0 6px rgba(212,177,90,.12), 0 16px 40px rgba(0,0,0,.4);
+      display: grid;
+      place-content: center;
+      text-align: center;
+      gap: 2px;
+    }
+    .crystal b {
+      font-family: "Cormorant Garamond", "Noto Serif TC", serif;
+      font-size: 34px;
+      font-weight: 700;
+    }
+    .crystal small { color: var(--gold-hot); font-size: 13px; }
+    .crystal em { font-style: normal; font-size: 10px; letter-spacing: .16em; color: var(--ink-dim); }
+    .dock {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      z-index: 6;
+      padding: 0 12px calc(10px + env(safe-area-inset-bottom, 0px));
+    }
+    .cast {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      background: rgba(12,9,7,.72);
+      border: 1px solid rgba(212,177,90,.35);
+      border-radius: 18px;
+      padding: 8px;
+      backdrop-filter: blur(12px);
+    }
+    .cast input {
+      border: 0;
+      background: transparent;
+      color: var(--ink);
+      font: inherit;
+      font-size: 16px;
+      padding: 8px 10px;
+      outline: none;
+    }
+    .cast button {
+      border: 0;
+      border-radius: 999px;
+      padding: 0 16px;
+      background: linear-gradient(180deg, var(--gold), var(--blue));
+      color: #f7f1dc;
+      font-weight: 700;
+    }
+    .status {
+      text-align: center;
+      font-size: 11px;
+      color: var(--ink-dim);
+      padding: 6px 4px 0;
+    }
+    .sheet {
+      position: absolute;
+      left: 8px; right: 8px; bottom: 78px;
+      z-index: 5;
+      background: var(--parchment);
+      color: var(--parchment-ink);
+      border-radius: 18px 18px 12px 12px;
+      box-shadow: 0 -12px 40px rgba(0,0,0,.35);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .sheet.peek { height: 118px; }
+    .sheet.open { height: min(58vh, 430px); }
+    .grab {
+      width: 42px; height: 4px; border-radius: 99px;
+      background: rgba(42,33,24,.25);
+      margin: 8px auto 4px;
+    }
+    .sheet-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 4px;
+      padding: 4px 10px 8px;
+    }
+    .sheet-tabs span {
+      text-align: center;
+      font-size: 11px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      padding: 6px 0;
+      border-radius: 999px;
+      color: #6b542e;
+    }
+    .sheet-tabs span.on {
+      background: #2a2118;
+      color: var(--parchment);
+    }
+    .sheet-body {
+      padding: 0 14px 14px;
+      overflow: auto;
+      flex: 1;
+    }
+    .sheet h3 {
+      margin: 0;
+      font-family: "Cormorant Garamond", "Noto Serif TC", serif;
+      font-size: 28px;
+    }
+    .sheet .meta { font-size: 11px; letter-spacing: .1em; color: #6b542e; margin: 0 0 6px; }
+    .sheet .gloss { font-weight: 700; margin: 0 0 8px; }
+    .path { font-size: 13px; line-height: 1.55; margin: 0; }
+    .path b { font-family: "Cormorant Garamond", serif; }
+    .rail {
+      position: absolute;
+      inset: 56px 0 78px;
+      z-index: 7;
+      background: rgba(10,8,6,.94);
+      transform: translateX(-104%);
+      transition: transform .25s ease;
+      padding: 12px 14px;
+    }
+    .phone-screen.grim .rail { transform: none; }
+    .rail h4 { margin: 0 0 10px; letter-spacing: .16em; font-size: 12px; color: var(--gold-hot); }
+    .rail button {
+      width: 100%;
+      text-align: left;
+      background: rgba(255,255,255,.04);
+      border: 1px solid rgba(212,177,90,.2);
+      color: var(--ink);
+      border-radius: 12px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+    .rail button small { display: block; color: var(--ink-dim); }
+    .settings {
+      position: absolute;
+      inset: 0;
+      z-index: 9;
+      background: #16110c;
+      display: none;
+      grid-template-rows: auto 1fr auto;
+      padding: 28px 16px 16px;
+      gap: 12px;
+    }
+    .phone-screen.set .settings { display: grid; }
+    .settings h2 {
+      margin: 0;
+      font-family: Cinzel, serif;
+      letter-spacing: .14em;
+      font-size: 16px;
+      color: var(--gold-hot);
+    }
+    .set-tabs {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      background: #0c0a08;
+      padding: 4px;
+      border-radius: 12px;
+      border: 1px solid rgba(212,177,90,.28);
+    }
+    .set-tabs span {
+      text-align: center;
+      font-size: 11px;
+      padding: 8px 0;
+      border-radius: 8px;
+      color: var(--ink-dim);
+    }
+    .set-tabs span.on {
+      background: linear-gradient(180deg, var(--gold-hot), var(--gold));
+      color: #1a1208;
+      font-weight: 700;
+    }
+    .set-body { color: var(--ink-dim); font-size: 13px; line-height: 1.6; }
+    .set-body .box {
+      border: 1px solid rgba(212,177,90,.28);
+      border-radius: 12px;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .set-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .ghost, .gold {
+      border: 0; border-radius: 999px; padding: 8px 14px; font: inherit;
+    }
+    .ghost { background: transparent; color: var(--ink-dim); border: 1px solid rgba(212,177,90,.35); }
+    .gold { background: linear-gradient(180deg, #e2c36a, #b8862f); color: #1a1208; font-weight: 700; }
+    .idle-hint {
+      position: absolute;
+      left: 50%;
+      top: 46%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: var(--ink-dim);
+      font-family: "Cormorant Garamond", serif;
+      font-style: italic;
+      font-size: 18px;
+      opacity: .85;
+    }
+    .hidden { display: none !important; }
+    .caption {
+      text-align: center;
+      margin-top: 14px;
+      color: var(--ink-dim);
+      font-size: 13px;
+    }
+    @media (max-width: 430px) {
+      body { padding: 16px 8px 40px; }
+      .phone { width: 100%; height: min(844px, 92vh); }
+    }
+  </style>
+</head>
+<body>
+  <h1>豎屏草案</h1>
+  <p class="lead">手機直向瀏覽的層次說明。主程式 <code>index.html</code> 已依此落地：單欄、語言列在第二行、羊皮紙底部抽屜、魔典左側滑入且不蓋住投入列。</p>
+  <div class="notes">
+    <div><b>1. 單欄、拇指區在下。</b> 左側魔典不再佔寬。陣占上半，羊皮紙改成底部抽屜，輸入列釘在最底。</div>
+    <div><b>2. 語言列縮成短碼。</b> FR / EN / JA / KO，設定與魔典收成圖示，避免頂欄折兩行。</div>
+    <div><b>3. 羊皮紙三態。</b> 收合只露標題與中文意思；上滑展開語素／蒸餾／最早見於。陣始終可見一截。</div>
+    <div><b>4. 魔典為左側滑入。</b> 不與結果搶同一塊。設定改全屏分頁，沿用現有四個索引標籤。</div>
+  </div>
+  <div class="switcher" id="switcher">
+    <button type="button" class="is-on" data-view="idle">開場</button>
+    <button type="button" data-view="result">結果 · 收合</button>
+    <button type="button" data-view="sheet">結果 · 展開</button>
+    <button type="button" data-view="grim">魔典</button>
+    <button type="button" data-view="set">爐房設定</button>
+  </div>
+  <div class="stage-board">
+    <div class="phone">
+      <div class="phone-screen" id="screen">
+        <div class="notch"></div>
+        <div class="top">
+          <div class="brand">
+            <div class="mark"></div>
+            <div>
+              <small>Verba Athanor</small>
+              <span>詞的煉金爐</span>
+            </div>
+          </div>
+          <div class="top-actions">
+            <button class="icon" type="button" id="btn-grim">魔典</button>
+            <button class="icon" type="button" id="btn-set">設定</button>
+          </div>
+        </div>
+        <div class="langs">
+          <i class="on">FR</i><i>EN</i><i>JA</i><i>KO</i>
+        </div>
+        <div class="arena">
+          <div class="circle"></div>
+          <div class="idle-hint" id="idle-hint">Solve et coagula</div>
+          <div class="crystal hidden" id="crystal">
+            <em>整詞</em>
+            <b>incroyable</b>
+            <small>難以置信的</small>
+          </div>
+        </div>
+        <div class="sheet peek hidden" id="sheet">
+          <div class="grab"></div>
+          <div class="sheet-tabs">
+            <span class="on">詞</span><span>語素</span><span>蒸餾</span>
+          </div>
+          <div class="sheet-body">
+            <p class="meta">/ɛ̃.kʁwa.jabl/ · adj · mf</p>
+            <h3>incroyable</h3>
+            <p class="gloss">難以置信的</p>
+            <p class="path"><b>最早見於</b> 1549 年 · 法語<br>著作 Du Bellay《La Deffence…》<br><br><b>蒸餾柱</b> PIE *ḱred-dʰeh₁- → Lat credere → VL *credere → OF croire → Fr incroyable</p>
+          </div>
+        </div>
+        <aside class="rail" id="rail">
+          <h4>魔典</h4>
+          <button type="button"><b>incroyable</b><small>難以置信的</small></button>
+          <button type="button"><b>parapluie</b><small>雨傘</small></button>
+          <button type="button"><b>souvenir</b><small>回憶；紀念品</small></button>
+        </aside>
+        <div class="settings" id="settings">
+          <h2>爐房設定</h2>
+          <div class="set-tabs">
+            <span class="on">煉金爐</span><span>朗讀</span><span>畫面</span><span>音效</span>
+          </div>
+          <div class="set-body">
+            <div class="box">煉金爐供應商<br>Grok · DeepSeek · Google</div>
+            <div class="box">API Key<br>三家金鑰分開保存在本機</div>
+            <div class="box">模型 / 推理強度 並排</div>
+          </div>
+          <div class="set-actions">
+            <button class="ghost" type="button" id="btn-close-set">關閉</button>
+            <button class="gold" type="button">保存</button>
+          </div>
+        </div>
+        <div class="dock">
+          <form class="cast" onsubmit="return false">
+            <input value="" placeholder="投入一個法語詞…" id="mock-input">
+            <button type="button">投入</button>
+          </form>
+          <div class="status" id="status">把詞投入爐中，看它結晶成語素</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption" id="caption">開場：陣占滿可視區，輸入在拇指可及處。</p>
+  <script>
+    const screen = document.getElementById('screen');
+    const sheet = document.getElementById('sheet');
+    const crystal = document.getElementById('crystal');
+    const idle = document.getElementById('idle-hint');
+    const status = document.getElementById('status');
+    const input = document.getElementById('mock-input');
+    const caption = document.getElementById('caption');
+    const copy = {
+      idle: '開場：陣占滿可視區，輸入在拇指可及處。',
+      result: '結果收合：結晶在陣心，羊皮紙只露中文意思與標籤。',
+      sheet: '結果展開：上滑看語素／蒸餾／最早見於，陣仍留一截。',
+      grim: '魔典從左側滑入，不覆蓋底部投入列。',
+      set: '設定改全屏，四個索引標籤沿用桌面爐房。'
+    };
+    function show(view) {
+      document.querySelectorAll('#switcher button').forEach((b) => b.classList.toggle('is-on', b.dataset.view === view));
+      screen.classList.toggle('grim', view === 'grim');
+      screen.classList.toggle('set', view === 'set');
+      const hasWord = view === 'result' || view === 'sheet' || view === 'grim';
+      crystal.classList.toggle('hidden', !hasWord);
+      idle.classList.toggle('hidden', hasWord || view === 'set');
+      sheet.classList.toggle('hidden', view === 'idle' || view === 'set');
+      sheet.classList.toggle('peek', view === 'result' || view === 'grim');
+      sheet.classList.toggle('open', view === 'sheet');
+      input.value = hasWord ? 'incroyable' : '';
+      status.textContent = view === 'idle' ? '把詞投入爐中，看它結晶成語素' : view === 'set' ? '' : '結晶完成 · 上滑羊皮紙看來源';
+      caption.textContent = copy[view];
+    }
+    document.getElementById('switcher').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-view]');
+      if (btn) show(btn.dataset.view);
+    });
+    document.getElementById('btn-grim').addEventListener('click', () => show('grim'));
+    document.getElementById('btn-set').addEventListener('click', () => show('set'));
+    document.getElementById('btn-close-set').addEventListener('click', () => show('idle'));
+    sheet.addEventListener('click', () => {
+      if (sheet.classList.contains('hidden')) return;
+      show(sheet.classList.contains('open') ? 'result' : 'sheet');
+    });
+  </script>
+</body>
+</html>

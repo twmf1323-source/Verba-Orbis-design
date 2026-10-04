@@ -296,6 +296,40 @@
                 <button type="button" class="icon-btn" id="clear-all-history" data-i18n="settings.clearAllLangs">清空全部語言</button>
               </div>
             </div>
+            <div class="settings-card">
+              <div class="field">
+                <label data-i18n="settings.backupTitle">匯出與匯入</label>
+                <div class="hint" data-i18n="settings.backupLead">備份全部語言的魔典與藥櫃。不含金鑰，也不含爐房設定。合併時加入還沒有的詞和語素；已經寫上的內容保留；只補目前還空白的欄位。</div>
+              </div>
+              <div class="field">
+                <label data-i18n="settings.cloudTitle">雲端資料夾</label>
+                <div class="hint" data-i18n="settings.cloudLead">選 Google 雲端硬碟裡已經同步到這台電腦的一個資料夾。同步寫入 athanor-backup.json，內容是全部語言的魔典與藥櫃。金鑰與爐房設定留在這台。兩台電腦要對同一份檔，請選同一個資料夾，等雲端同步完成再載入。請用 Chrome 或 Edge 開本機網址；直接雙擊 HTML 不能記住資料夾。</div>
+              </div>
+              <p id="cloud-status" class="hint" role="status" aria-live="polite">正在檢查雲端資料夾…</p>
+              <div class="field field-actions backup-actions">
+                <button type="button" class="icon-btn" id="cloud-link" data-i18n="settings.cloudLink">連結資料夾</button>
+                <button type="button" class="btn-gold" id="cloud-sync" data-i18n="settings.cloudSync" disabled>同步到雲端</button>
+                <button type="button" class="icon-btn" id="cloud-load" data-i18n="settings.cloudLoad" disabled>從雲端載入</button>
+                <button type="button" class="icon-btn" id="cloud-unlink" data-i18n="settings.cloudUnlink" disabled>取消連結</button>
+              </div>
+              <div class="field" role="radiogroup" data-i18n-aria="settings.backupMode" aria-label="匯入方式">
+                <label class="check-row">
+                  <input type="radio" name="backup-mode" value="merge" checked>
+                  <span data-i18n="settings.backupMerge">合併：加入新的、跳過重複、補上空白</span>
+                </label>
+                <label class="check-row">
+                  <input type="radio" name="backup-mode" value="replace">
+                  <span data-i18n="settings.backupReplace">覆蓋：換掉檔案裡那些語言的魔典與藥櫃</span>
+                </label>
+                <div class="hint" data-i18n="settings.backupModeCloud">從雲端載入與匯入 JSON 都用這裡選的方式。</div>
+              </div>
+              <div class="field field-actions backup-actions">
+                <button type="button" class="btn-gold" id="backup-export" data-i18n="settings.backupExport">匯出 JSON</button>
+                <button type="button" class="icon-btn" id="backup-import" data-i18n="settings.backupImport">匯入 JSON</button>
+                <input id="backup-file" type="file" accept="application/json,.json" hidden>
+              </div>
+              <p id="backup-report" class="hint" hidden></p>
+            </div>
           </section>
         </div>
       </div>

@@ -4,11 +4,11 @@
   let graph;
   let fx;
   let generationSeq = 0;
-  const jobs = new Map();
+  const jobsByLang = new Map();
   const pages = new Map();
   let currentAnalysis = null;
-  let expanding = false;
   let cabinetDrag = null;
+  let cloudBusy = false;
 
   function t(k) {
     return VA.i18n.t(k);
@@ -32,29 +32,132 @@
         statusKind: '',
         idle: true,
         input: '',
+        epoch: 0,
       });
     }
     return pages.get(id);
   }
 
-  function beginGeneration(lang) {
+  function jobBag(lang) {
     const L = lang || langNow();
-    const prev = jobs.get(L);
-    prev?.controller.abort();
-    generationSeq += 1;
-    const controller = new AbortController();
-    const job = { id: generationSeq, lang: L, controller };
-    jobs.set(L, job);
-    return { id: job.id, signal: controller.signal, lang: L };
+    if (!jobsByLang.has(L)) jobsByLang.set(L, new Map());
+    return jobsByLang.get(L);
   }
 
-  function isCurrent(id, lang) {
-    return jobs.get(lang || langNow())?.id === id;
+  function beginJob(lang, spec = {}) {
+    const L = lang || langNow();
+    const page = pageOf(L);
+    if (spec.exclusive) {
+      abortLangJobs(L);
+      page.epoch += 1;
+    }
+    generationSeq += 1;
+    const controller = new AbortController();
+    const job = {
+      id: generationSeq,
+      lang: L,
+      kind: spec.kind || 'work',
+      op: spec.op || '',
+      nodeId: spec.nodeId || '',
+      pair: spec.pair || '',
+      epoch: page.epoch,
+      controller,
+    };
+    jobBag(L).set(job.id, job);
+    refreshChrome(L);
+    return { id: job.id, signal: controller.signal, lang: L, epoch: job.epoch, job };
+  }
+
+  function jobLive(id, lang) {
+    return jobBag(lang).has(id);
+  }
+
+  function sameFurnace(id, lang, epoch) {
+    const job = jobBag(lang).get(id);
+    return Boolean(job) && job.epoch === pageOf(lang).epoch && (epoch == null || job.epoch === epoch);
   }
 
   function endJob(lang, id) {
-    const job = jobs.get(lang);
-    if (job && job.id === id) jobs.delete(lang);
+    jobBag(lang).delete(id);
+    refreshChrome(lang);
+  }
+
+  function abortLangJobs(lang) {
+    const bag = jobBag(lang);
+    for (const job of bag.values()) {
+      try {
+        job.controller.abort();
+      } catch {
+        /* ignore */
+      }
+    }
+    bag.clear();
+  }
+
+  function jobsOf(lang) {
+    return [...jobBag(lang).values()];
+  }
+
+  function hasKind(lang, kind) {
+    return jobsOf(lang).some((j) => j.kind === kind);
+  }
+
+  function workCount(lang) {
+    return jobsOf(lang).filter((j) => j.kind !== 'gloss').length;
+  }
+
+  function findJob(lang, pred) {
+    return jobsOf(lang).find(pred) || null;
+  }
+
+  function busyOps(lang, nodeId) {
+    const set = new Set();
+    if (!nodeId) return set;
+    for (const job of jobsOf(lang)) {
+      if (job.nodeId === nodeId && job.op) set.add(job.op);
+    }
+    return set;
+  }
+
+  function nodeHasWork(lang, nodeId) {
+    return Boolean(nodeId) && jobsOf(lang).some((j) => j.nodeId === nodeId);
+  }
+
+  function refreshChrome(lang) {
+    if (!viewing(lang) || !graph) return;
+    VA.ui.setCasting(hasKind(lang, 'cast'));
+    document.getElementById('stage')?.classList.toggle('is-working', workCount(lang) > 0);
+    const seen = new Set();
+    for (const job of jobsOf(lang)) {
+      if (job.nodeId) {
+        graph.setBusy?.(job.nodeId, true);
+        seen.add(job.nodeId);
+      }
+    }
+    for (const n of graph.all()) {
+      if (!seen.has(n.id)) graph.setBusy?.(n.id, false);
+    }
+  }
+
+  function finishWorkStatus(lang, okMsg, okKind) {
+    const n = workCount(lang);
+    if (n > 1) {
+      setPageStatus(t('status.expandingMany').replace('{n}', String(n)), 'busy', lang);
+      return;
+    }
+    if (n === 1) {
+      const job = jobsOf(lang).find((j) => j.kind !== 'gloss');
+      if (job?.kind === 'combine') setPageStatus(t('status.coniunctio'), 'busy', lang);
+      else if (job?.kind === 'cast') setPageStatus(pageOf(lang).status || t('status.crystallizing'), 'busy', lang);
+      else setPageStatus(t('status.expanding'), 'busy', lang);
+      return;
+    }
+    if (okMsg) setPageStatus(okMsg, okKind || 'ok', lang);
+  }
+
+  function paintInspector(node, lang) {
+    if (!viewing(lang) || !node) return;
+    VA.ui.renderInspector(node, { expanding: busyOps(lang, node.id) });
   }
 
   function setPageStatus(msg, kind, lang) {
@@ -148,6 +251,7 @@
       morphNodes.forEach((n) => graph.addLink(wordNode.id, n.id, 'morph'));
     }
     graph.focusWord();
+    if (replayLoans(analysis, L)) graph.focusWord({ includeOuter: true });
     currentAnalysis = analysis;
     VA.ui.setIdle(false);
     graph.select(wordNode.id);
@@ -178,18 +282,15 @@
         return;
       }
       document.getElementById('word-input').value = surface;
-      const { id, signal } = beginGeneration(lang);
+      const { id, signal } = beginJob(lang, { kind: 'cast', exclusive: true });
       VA.audio?.unlock();
       VA.audio?.startAmbient();
       VA.audio?.sfx('ignite');
-      if (viewing(lang)) {
-        VA.ui.setCasting(true);
-        VA.ui.renderInspector(null);
-      }
+      if (viewing(lang)) VA.ui.renderInspector(null);
       setPageStatus(t('status.casting'), 'busy', lang);
       try {
         await wait(480, signal);
-        if (!isCurrent(id, lang)) return;
+        if (!sameFurnace(id, lang)) return;
         const analysis = VA.schema.normalizeAnalysis(
           VA.schema.analysisFromMorpheme(seedMorph, parentAnalysis || pageOf(lang).analysis || currentAnalysis),
           surface
@@ -202,7 +303,6 @@
         if (viewing(lang)) VA.audio?.sfx('error');
       } finally {
         endJob(lang, id);
-        if (viewing(lang) && !jobs.get(lang)) VA.ui.setCasting(false);
       }
       return;
     }
@@ -214,19 +314,16 @@
       return;
     }
     document.getElementById('word-input').value = raw.trim();
-    const { id, signal } = beginGeneration(lang);
+    const { id, signal, epoch } = beginJob(lang, { kind: 'cast', exclusive: true });
     VA.audio?.unlock();
     VA.audio?.startAmbient();
     VA.audio?.sfx('ignite');
-    if (viewing(lang)) {
-      VA.ui.setCasting(true);
-      VA.ui.renderInspector(null);
-    }
+    if (viewing(lang)) VA.ui.renderInspector(null);
     setPageStatus(t('status.casting'), 'busy', lang);
 
     try {
       await wait(480, signal);
-      if (!isCurrent(id, lang)) return;
+      if (!sameFurnace(id, lang, epoch)) return;
 
       const demoHit = VA.demo.lookupAnalysis(normalized, lang);
       const key = VA.storage.getApiKey();
@@ -251,7 +348,7 @@
         } else {
           setPageStatus(forceSplit ? t('status.resplit') : t('status.crystallizing'), 'busy', lang);
           analysis = await VA.ai.analyzeWord({ word: raw.trim(), forceSplit, lang, ...apiOpts(signal) });
-          if (!isCurrent(id, lang)) return;
+          if (!sameFurnace(id, lang, epoch)) return;
           if (!analysis.morphemes.length) {
             analysis.morphemes = [VA.schema.atomicMorphemeFromAnalysis(analysis)];
           }
@@ -266,13 +363,15 @@
       if (!analysis.demo && key) {
         const miss = VA.schema.missingGlosses(analysis);
         if (miss.any) {
+          const gloss = beginJob(lang, { kind: 'gloss' });
           VA.ai
-            .ensureGlosses(analysis, { lang, ...apiOpts(signal) })
+            .ensureGlosses(analysis, { lang, ...apiOpts(gloss.signal) })
             .then((filled) => {
-              if (!isCurrent(id, lang) || !filled) return;
-              paintAnalysis(filled, { lang, celebrate: false });
+              if (!sameFurnace(gloss.id, lang, gloss.epoch) || !filled) return;
+              applyFilledGlosses(filled, lang);
             })
-            .catch(() => {});
+            .catch(() => {})
+            .finally(() => endJob(lang, gloss.id));
         }
       }
     } catch (err) {
@@ -281,26 +380,120 @@
       if (viewing(lang)) VA.audio?.sfx('error');
     } finally {
       endJob(lang, id);
-      if (viewing(lang) && !jobs.get(lang)) VA.ui.setCasting(false);
     }
   }
 
+  function applyFilledGlosses(filled, lang) {
+    const page = pageOf(lang);
+    page.analysis = filled;
+    VA.storage.upsertHistory(filled, lang);
+    const extra =
+      viewing(lang) && graph.all().some((n) => n.type === 'family' || n.type === 'root' || n.fromCabinet);
+    if (!extra) {
+      paintAnalysis(filled, { lang, celebrate: false });
+      return;
+    }
+    if (!viewing(lang)) return;
+    currentAnalysis = filled;
+    const word = graph.all().find((n) => n.type === 'word');
+    if (word) word.analysis = filled;
+    for (const m of filled.morphemes || []) {
+      const node = graph.get('morph:' + m.id);
+      if (!node) continue;
+      node.morph = m;
+      node.gloss = m.meaningZh;
+    }
+    const selected = graph.get(graph.selectedId);
+    if (selected) paintInspector(selected, lang);
+  }
+
+  function replayLoans(analysis, lang) {
+    if (!viewing(lang) || !analysis) return 0;
+    const row = VA.storage.getHistoryByNormalized(
+      VA.schema.normalizeQuery(analysis.lemma || analysis.word),
+      lang
+    );
+    const loans = row?.loans;
+    if (!loans) return 0;
+    let added = 0;
+    for (const rec of Object.values(loans)) {
+      const want = VA.schema.bareForm(rec?.surface);
+      if (!want) continue;
+      const source =
+        graph.all().find((n) => n.type === 'morph' && VA.schema.bareForm(n.form) === want) ||
+        graph.all().find((n) => n.type === 'word' && VA.schema.bareForm(n.form) === want);
+      if (!source) continue;
+      const fresh = [];
+      for (const item of (rec.items || []).slice(0, 10)) {
+        const form = VA.schema.asEnglishLoanWord(item?.word, item?.era);
+        if (!form) continue;
+        item.word = form.word;
+        item.era = form.era;
+        const id = 'fam:' + VA.schema.fnv1aHex(item.word + 'loan' + source.id);
+        if (graph.get(id)) continue;
+        fresh.push(
+          graph.addNode({
+            id,
+            type: 'family',
+            form: item.word,
+            gloss: item.glossZh,
+            pos: item.pos,
+            era: item.era || 'ModE',
+            rel: item.kind || 'loan',
+            link: item.linkZh,
+            fromLoan: true,
+            r: 72,
+          })
+        );
+        graph.addLink(source.id, id, 'loan');
+        added += 1;
+      }
+      if (fresh.length) graph.placeFan(source, fresh, 'loan');
+    }
+    return added;
+  }
+
+  function expandEmptyStatus(op) {
+    if (op === 'loan') return t('status.noLoan');
+    if (op === 'family' || op === 'derive' || op === 'compound') return t('status.noExpandFamily');
+    if (op === 'distill') return t('status.noExpandDistill');
+    return t('status.noExpand');
+  }
+
+  function expandLabel(op) {
+    if (op === 'distill') return t('op.distill');
+    if (op === 'family') return t('op.family');
+    if (op === 'compound') return t('op.compound');
+    if (op === 'loan') return t('op.loan');
+    return t('op.derive');
+  }
+
   async function expand(op, morphNode) {
-    if (!morphNode?.morph || expanding) return;
+    if (!morphNode?.morph) return;
     const lang = langNow();
+    if (hasKind(lang, 'cast')) return;
     const analysis = currentAnalysis;
     if (!analysis) return;
-    const { id, signal } = beginGeneration(lang);
-    expanding = true;
-    setPageStatus(t('status.expanding'), 'busy', lang);
-    VA.ui.renderInspector(morphNode, { expanding: true });
+    if (findJob(lang, (j) => j.kind === 'expand' && j.nodeId === morphNode.id && j.op === op)) {
+      setPageStatus(t('status.alreadyExpanding'), 'busy', lang);
+      return;
+    }
+    const { id, signal, epoch } = beginJob(lang, {
+      kind: 'expand',
+      op,
+      nodeId: morphNode.id,
+    });
+    finishWorkStatus(lang);
+    if (viewing(lang) && graph.selectedId === morphNode.id) paintInspector(morphNode, lang);
 
+    let doneMsg = '';
+    let doneKind = 'ok';
     try {
       const demoExp = VA.demo.lookupExpand(analysis.lemma, morphNode.morph, op, lang);
       const key = VA.storage.getApiKey();
       let result = demoExp;
-      const demoEmpty = !demoExp.items.length;
-      if (demoEmpty && key) {
+      const demoKnown = Boolean(demoExp.settled) || demoExp.items.length > 0;
+      if (!demoKnown && key) {
         result = await VA.ai.expandMorpheme({
           op,
           morph: morphNode.morph,
@@ -309,19 +502,51 @@
           lang,
           ...apiOpts(signal),
         });
-      } else if (demoEmpty && !key) {
-        setPageStatus(t('status.needKey'), 'warn', lang);
+      } else if (!demoKnown && !key) {
+        doneMsg = t('status.needKey');
+        doneKind = 'warn';
         if (viewing(lang)) VA.ui.openSettings(true);
         return;
       }
 
-      if (!isCurrent(id, lang)) return;
+      if (!sameFurnace(id, lang, epoch)) return;
+      if (op === 'loan') {
+        const seen = new Set();
+        const english = [];
+        for (const item of result.items || []) {
+          const form = VA.schema.asEnglishLoanWord(item.word, item.era);
+          if (!form) continue;
+          const key = VA.schema.bareForm(form.word);
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          english.push({ ...item, word: form.word, era: form.era });
+        }
+        result = { ...result, items: english.slice(0, 10) };
+        if (viewing(lang)) {
+          for (const node of graph.all()) {
+            if (!node.fromLoan) continue;
+            const form = VA.schema.asEnglishLoanWord(node.form, node.era);
+            if (!form || form.word !== node.form) graph.dropNode(node.id);
+          }
+        }
+        if (result.items.length) {
+          VA.storage.saveLoans(analysis.lemma, lang, morphNode.morph?.surface, result.items);
+        }
+      }
       if (!result.items.length) {
-        setPageStatus(t('status.noExpand'), 'warn', lang);
-        if (viewing(lang)) VA.audio?.sfx('error');
+        doneMsg =
+          op === 'loan' && VA.schema.isAtomicAnalysis(analysis)
+            ? t('status.noLoanAtomic')
+            : expandEmptyStatus(op);
+        doneKind = 'warn';
+        if (viewing(lang)) {
+          VA.audio?.sfx('error');
+          VA.ui.toast(doneMsg);
+        }
         return;
       }
-      if (!viewing(lang)) {
+      const liveNode = viewing(lang) ? graph.get(morphNode.id) : null;
+      if (!viewing(lang) || !liveNode) {
         const spec = VA.langs.LANGS[lang];
         VA.ui.toast(`${spec ? spec.label.zh : lang}爐已析出`);
         return;
@@ -330,10 +555,7 @@
 
       const fresh = [];
       for (const item of result.items) {
-        const isHist =
-          op === 'distill' ||
-          /PIE|Lat|Gk|VL|OF|MF|OE|ME|OJ|MidJ|Ch|OK|SK/i.test(item.era || '') ||
-          /^\*/.test(item.word);
+        const isHist = op === 'distill' || /^\*/.test(item.word);
         const node = graph.addNode({
           id: (isHist ? 'root:' : 'fam:') + VA.schema.fnv1aHex(item.word + op + morphNode.id),
           type: isHist ? 'root' : 'family',
@@ -343,25 +565,31 @@
           era: item.era,
           rel: item.kind,
           link: item.linkZh,
+          fromLoan: op === 'loan',
           r: isHist ? 64 : 72,
         });
         fresh.push(node);
-        graph.addLink(morphNode.id, node.id, op);
+        const linkKind = op === 'family' ? VA.schema.familyLinkKind(item.kind) : op;
+        graph.addLink(morphNode.id, node.id, linkKind);
       }
-      graph.placeFan(morphNode, fresh, op);
+      graph.placeFan(liveNode, fresh, op);
       graph.focusWord({ includeOuter: true });
-      const label = op === 'compound' ? t('op.compound') : op === 'distill' ? t('op.distill') : t('op.derive');
-      setPageStatus(`${t('status.ready')} · ${label} ${fresh.length}`, 'ok', lang);
+      const label = expandLabel(op);
       VA.ui.toast(`${label} · ${fresh.map((n) => n.form).slice(0, 3).join('、')}`);
       fx.ember();
       pageOf(lang).graph = graph.snapshot();
+      doneMsg = `${t('status.ready')} · ${label} ${fresh.length}`;
+      doneKind = 'ok';
     } catch (err) {
       if (err?.name === 'AbortError') return;
-      setPageStatus(err.message || String(err), 'err', lang);
+      doneMsg = err.message || String(err);
+      doneKind = 'err';
     } finally {
-      expanding = viewing(lang) ? false : expanding;
       endJob(lang, id);
-      if (viewing(lang) && morphNode) VA.ui.renderInspector(graph.get(morphNode.id) || morphNode);
+      if (viewing(lang) && graph.selectedId === morphNode.id) {
+        paintInspector(graph.get(morphNode.id) || morphNode, lang);
+      }
+      finishWorkStatus(lang, doneMsg, doneKind);
     }
   }
 
@@ -482,8 +710,9 @@
   }
 
   async function combineReagents(seedA, seedB, { sourceNode, targetNode, cabinetRow } = {}) {
-    if (!seedA || !seedB || expanding) return;
+    if (!seedA || !seedB) return;
     const lang = langNow();
+    if (hasKind(lang, 'cast')) return;
     const formA = seedA.surface || seedA.form;
     const formB = seedB.surface || seedB.form;
     if (!formA || !formB) return;
@@ -495,9 +724,18 @@
       setPageStatus(t('status.needGraph'), 'warn', lang);
       return;
     }
-    const { id, signal } = beginGeneration(lang);
-    expanding = true;
-    setPageStatus(t('status.coniunctio'), 'busy', lang);
+    const pair = [VA.schema.bareForm(formA), VA.schema.bareForm(formB)].sort().join('+');
+    if (findJob(lang, (j) => j.kind === 'combine' && j.pair === pair)) {
+      setPageStatus(t('status.alreadyExpanding'), 'busy', lang);
+      return;
+    }
+    const { id, signal, epoch } = beginJob(lang, {
+      kind: 'combine',
+      op: 'compound',
+      nodeId: targetNode.id,
+      pair,
+    });
+    finishWorkStatus(lang);
 
     let guest = sourceNode;
     if (cabinetRow && !guest) {
@@ -505,6 +743,8 @@
       graph.addLink(guest.id, targetNode.id, 'compound');
     }
 
+    let doneMsg = '';
+    let doneKind = 'ok';
     try {
       const demoHit = VA.demo.lookupConiunctio(formA, formB, lang);
       const key = VA.storage.getApiKey();
@@ -520,28 +760,29 @@
           ...apiOpts(signal),
         });
       } else if (demoEmpty && !key) {
-        setPageStatus(t('status.needKey'), 'warn', lang);
+        doneMsg = t('status.needKey');
+        doneKind = 'warn';
         if (viewing(lang)) VA.ui.openSettings(true);
         return;
       }
 
-      if (!isCurrent(id, lang)) return;
+      if (!sameFurnace(id, lang, epoch)) return;
       if (!result.items.length) {
-        setPageStatus(t('status.noConiunctio'), 'warn', lang);
+        doneMsg = t('status.noConiunctio');
+        doneKind = 'warn';
         if (viewing(lang)) {
           VA.audio?.sfx('error');
           if (guest) graph.select(guest.id);
         }
         return;
       }
-      if (!viewing(lang)) {
+      if (!viewing(lang) || !graph.get(targetNode.id)) {
         const spec = VA.langs.LANGS[lang];
         VA.ui.toast(`${spec ? spec.label.zh : lang}爐已析出`);
         return;
       }
       VA.audio?.sfx('compound');
       const fresh = paintCombineItems(result, guest, targetNode);
-      setPageStatus(`${t('status.ready')} · ${t('op.compound')} ${fresh.length}`, 'ok', lang);
       VA.ui.toast(
         `${t('toast.coniunctio')} · ${formA} + ${formB} → ${fresh
           .map((n) => n.form)
@@ -551,13 +792,18 @@
       fx.ember();
       graph.select(targetNode.id);
       pageOf(lang).graph = graph.snapshot();
+      doneMsg = `${t('status.ready')} · ${t('op.compound')} ${fresh.length}`;
+      doneKind = 'ok';
     } catch (err) {
       if (err?.name === 'AbortError') return;
-      setPageStatus(err.message || String(err), 'err', lang);
+      doneMsg = err.message || String(err);
+      doneKind = 'err';
     } finally {
-      if (viewing(lang)) expanding = false;
       endJob(lang, id);
-      if (viewing(lang) && targetNode) VA.ui.renderInspector(graph.get(targetNode.id) || targetNode);
+      if (viewing(lang) && graph.selectedId === targetNode.id) {
+        paintInspector(graph.get(targetNode.id) || targetNode, lang);
+      }
+      finishWorkStatus(lang, doneMsg, doneKind);
     }
   }
 
@@ -574,28 +820,28 @@
     const lang = langNow();
     const row = VA.storage.getHistoryByNormalized(normalized, lang);
     if (!row?.analysis) return;
-    const { id, signal } = beginGeneration(lang);
+    const { id } = beginJob(lang, { kind: 'cast', exclusive: true });
     const analysis = VA.schema.normalizeAnalysis(row.analysis, row.lemma);
     paintAnalysis(analysis, { lang, persist: false, celebrate: false });
     setPageStatus(t('status.saved'), 'ok', lang);
+    endJob(lang, id);
     const miss = VA.schema.missingGlosses(analysis);
     const key = VA.storage.getApiKey();
     if (miss.any && key && !analysis.demo) {
+      const gloss = beginJob(lang, { kind: 'gloss' });
       VA.ai
-        .ensureGlosses(analysis, { lang, ...apiOpts(signal) })
+        .ensureGlosses(analysis, { lang, ...apiOpts(gloss.signal) })
         .then((filled) => {
-          if (!isCurrent(id, lang) || !filled) return;
-          paintAnalysis(filled, { lang, persist: true, celebrate: false });
+          if (!sameFurnace(gloss.id, lang, gloss.epoch) || !filled) return;
+          applyFilledGlosses(filled, lang);
         })
         .catch(() => {})
-        .finally(() => endJob(lang, id));
-    } else {
-      endJob(lang, id);
+        .finally(() => endJob(lang, gloss.id));
     }
   }
 
   function onSelect(node) {
-    VA.ui.renderInspector(node, { expanding });
+    paintInspector(node, langNow());
     VA.ui.setCabinetMixEnabled(Boolean(node) && graph.all().length > 0);
     if (node && node.type !== 'word') VA.ui.setSheetOpen(true);
   }
@@ -640,7 +886,11 @@
       node.era ||
       node.morph?.origin ||
       (node.type === 'word' || node.type === 'family' ? VA.langs.current().eraDefault : '');
-    speakText(node.form, { era, origin: node.morph?.origin, historical: node.type === 'root' }, node.el);
+    speakText(
+      node.form,
+      { era, origin: node.morph?.origin, historical: node.type === 'root', fromLoan: Boolean(node.fromLoan) },
+      node.el
+    );
   }
 
   function speakFromEvent(e, { force } = {}) {
@@ -703,6 +953,25 @@
       const op = opBtn.getAttribute('data-op');
       const selected = graph.get(graph.selectedId);
       if (!selected) return;
+      if (op === 'loan-cast') {
+        const formWord = selected.form || '';
+        if (!formWord || /^\*/.test(formWord)) return;
+        switchLang('en');
+        cast(formWord);
+        return;
+      }
+      if (op === 'loan' && selected.type === 'word') {
+        expand('loan', {
+          id: selected.id,
+          morph: {
+            surface: selected.analysis?.lemma || selected.form,
+            kind: 'root',
+            meaningZh: selected.analysis?.glossZh || '',
+            meaningFr: selected.analysis?.glossFr || '',
+          },
+        });
+        return;
+      }
       if (op === 'resplit') {
         const word = selected.analysis?.lemma || selected.form || '';
         if (!word) return;
@@ -863,11 +1132,10 @@
 
     document.getElementById('clear-graph').addEventListener('click', () => {
       const lang = langNow();
-      jobs.get(lang)?.controller.abort();
-      jobs.delete(lang);
+      abortLangJobs(lang);
+      pageOf(lang).epoch += 1;
       graph.clear();
       currentAnalysis = null;
-      expanding = false;
       const page = pageOf(lang);
       page.analysis = null;
       page.graph = null;
@@ -878,6 +1146,7 @@
       VA.ui.setCasting(false);
       VA.ui.setCabinetMixEnabled(false);
       setPageStatus(t('cast.hint'), '', lang);
+      refreshChrome(lang);
     });
 
     document.getElementById('grim-lang-list')?.addEventListener('click', (e) => {
@@ -903,6 +1172,291 @@
       VA.ui.setStatus(t('settings.clearedAll'), 'ok');
       VA.audio.sfx('ui');
     });
+
+    function backupMode() {
+      return document.querySelector('input[name="backup-mode"]:checked')?.value === 'replace' ? 'replace' : 'merge';
+    }
+
+    function backupReport(report) {
+      if (report.mode === 'replace') {
+        return t('settings.backupReplaced')
+          .replace('{h}', String(report.history.replaced))
+          .replace('{c}', String(report.cabinet.replaced));
+      }
+      return t('settings.backupMerged')
+        .replace('{ha}', String(report.history.added))
+        .replace('{hf}', String(report.history.filled))
+        .replace('{hs}', String(report.history.skipped))
+        .replace('{ca}', String(report.cabinet.added))
+        .replace('{cf}', String(report.cabinet.filled))
+        .replace('{cs}', String(report.cabinet.skipped));
+    }
+
+    function showBackupReport(message, kind) {
+      const el = document.getElementById('backup-report');
+      if (el) {
+        el.hidden = false;
+        el.textContent = message;
+      }
+      VA.ui.setStatus(message, kind);
+    }
+
+    document.getElementById('backup-export')?.addEventListener('click', () => {
+      const bundle = VA.storage.exportBundle();
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
+      const link = document.createElement('a');
+      const day = new Date().toISOString().slice(0, 10);
+      link.href = URL.createObjectURL(blob);
+      link.download = `verba-athanor-${day}.json`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1500);
+      showBackupReport(t('settings.backupExported'), 'ok');
+      VA.audio.sfx('ui');
+    });
+
+    const backupFile = document.getElementById('backup-file');
+    document.getElementById('backup-import')?.addEventListener('click', () => {
+      if (!backupFile) return;
+      backupFile.value = '';
+      backupFile.click();
+    });
+    backupFile?.addEventListener('change', () => {
+      const file = backupFile.files && backupFile.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = VA.storage.parseBackup(String(reader.result || ''));
+          const mode = backupMode();
+          if (mode === 'replace' && !window.confirm(t('settings.backupReplaceConfirm'))) return;
+          const report = VA.storage.importBundle(data, mode);
+          const active = currentAnalysis ? VA.schema.normalizeQuery(currentAnalysis.lemma) : '';
+          refreshRails(active);
+          VA.ui.renderGrimSettings();
+          showBackupReport(backupReport(report), 'ok');
+          VA.audio.sfx('ui');
+        } catch (err) {
+          showBackupReport(err?.message || t('settings.backupBad'), 'err');
+          VA.audio?.sfx('error');
+        }
+      };
+      reader.onerror = () => {
+        showBackupReport(t('settings.backupBad'), 'err');
+        VA.audio?.sfx('error');
+      };
+      reader.readAsText(file);
+    });
+
+    function fillCloud(key, map) {
+      return Object.keys(map || {}).reduce((text, name) => text.split('{' + name + '}').join(map[name]), t(key));
+    }
+
+    function formatCloudStamp(iso) {
+      if (!iso) return '';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '';
+      const p = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+    }
+
+    function setCloudButtons(st) {
+      const supported = Boolean(st && st.supported);
+      const linked = Boolean(st && st.linked);
+      const link = document.getElementById('cloud-link');
+      const sync = document.getElementById('cloud-sync');
+      const load = document.getElementById('cloud-load');
+      const unlink = document.getElementById('cloud-unlink');
+      if (link) link.disabled = !supported || cloudBusy;
+      if (sync) sync.disabled = !supported || !linked || cloudBusy;
+      if (load) load.disabled = !supported || !linked || cloudBusy;
+      if (unlink) unlink.disabled = !supported || !linked || cloudBusy;
+    }
+
+    function lockCloudButtons() {
+      cloudBusy = true;
+      ['cloud-link', 'cloud-sync', 'cloud-load', 'cloud-unlink'].forEach((id) => {
+        const btn = document.getElementById(id);
+        if (btn) btn.disabled = true;
+      });
+    }
+
+    async function refreshCloudFolderStatus() {
+      const el = document.getElementById('cloud-status');
+      if (!el) return;
+      if (typeof VA.storage.cloudFolderStatus !== 'function') {
+        el.textContent = t('settings.cloudStale');
+        setCloudButtons({ supported: false, linked: false });
+        return;
+      }
+      try {
+        const st = await VA.storage.cloudFolderStatus();
+        if (!st.supported) {
+          el.textContent = t('settings.cloudUnsupported');
+        } else if (!st.linked) {
+          el.textContent = t('settings.cloudUnlinked');
+        } else {
+          const name = st.name ? `「${st.name}」` : t('settings.cloudFolderFallback');
+          const file = st.fileName || VA.storage.CLOUD_BACKUP_FILE || 'athanor-backup.json';
+          let line = fillCloud('settings.cloudLinked', { name, file });
+          if (st.permission === 'granted') {
+            line += st.syncedAt
+              ? fillCloud('settings.cloudSynced', { time: formatCloudStamp(st.syncedAt) })
+              : t('settings.cloudNeverSynced');
+          } else {
+            line += t('settings.cloudNeedPerm');
+          }
+          if (st.loadedAt) line += fillCloud('settings.cloudLoaded', { time: formatCloudStamp(st.loadedAt) });
+          el.textContent = line;
+        }
+        setCloudButtons(st);
+      } catch (err) {
+        el.textContent = t('settings.cloudStatusFail');
+        setCloudButtons({ supported: true, linked: false });
+        console.warn('[cloud status]', err);
+      }
+    }
+
+    function cloudActionError(err) {
+      if (!err || err.name === 'AbortError' || err.message === '已取消') return '';
+      if (err.name === 'SecurityError') {
+        const openedAsFile = location.protocol === 'file:' || window.isSecureContext === false;
+        return openedAsFile ? t('settings.cloudFile') : t('settings.cloudDenied');
+      }
+      if (err.name === 'NotAllowedError') return t('settings.cloudDenied');
+      return err.message || t('settings.cloudFail');
+    }
+
+    function cloudWhere(st) {
+      return st && st.name ? `「${st.name}」` : t('settings.cloudFolderFallback');
+    }
+
+    async function linkCloudFolder() {
+      if (cloudBusy) return;
+      if (typeof VA.storage.pickCloudFolder !== 'function') {
+        showBackupReport(t('settings.cloudStale'), 'err');
+        return;
+      }
+      lockCloudButtons();
+      try {
+        const picked = await VA.storage.pickCloudFolder();
+        const msg = picked.name
+          ? fillCloud('settings.cloudLinkedToast', { name: picked.name })
+          : t('settings.cloudLinkedToastBare');
+        showBackupReport(msg, 'ok');
+        VA.audio.sfx('ui');
+      } catch (err) {
+        const msg = cloudActionError(err);
+        if (msg) {
+          showBackupReport(msg, 'err');
+          VA.audio?.sfx('error');
+        }
+      } finally {
+        cloudBusy = false;
+        await refreshCloudFolderStatus();
+      }
+    }
+
+    async function syncCloudFolder() {
+      if (cloudBusy) return;
+      if (typeof VA.storage.writeCloudBackup !== 'function') {
+        showBackupReport(t('settings.cloudStale'), 'err');
+        return;
+      }
+      lockCloudButtons();
+      try {
+        const allowed = await VA.storage.ensureCloudFolderPermission('readwrite');
+        if (!allowed) {
+          showBackupReport(t('settings.cloudWriteDenied'), 'err');
+          VA.audio?.sfx('error');
+          return;
+        }
+        const st = await VA.storage.cloudFolderStatus();
+        const file = st.fileName || 'athanor-backup.json';
+        if (!window.confirm(fillCloud('settings.cloudSyncConfirm', { where: cloudWhere(st), file }))) return;
+        const written = await VA.storage.writeCloudBackup(VA.storage.exportBundle());
+        showBackupReport(fillCloud('settings.cloudSyncedToast', { name: written.name ? `「${written.name}」` : t('settings.cloudFolderFallback') }), 'ok');
+        VA.audio.sfx('ui');
+      } catch (err) {
+        const msg = cloudActionError(err);
+        if (msg) {
+          showBackupReport(msg, 'err');
+          VA.audio?.sfx('error');
+        }
+      } finally {
+        cloudBusy = false;
+        await refreshCloudFolderStatus();
+      }
+    }
+
+    async function loadCloudFolder() {
+      if (cloudBusy) return;
+      if (typeof VA.storage.readCloudBackup !== 'function') {
+        showBackupReport(t('settings.cloudStale'), 'err');
+        return;
+      }
+      lockCloudButtons();
+      try {
+        const allowed = await VA.storage.ensureCloudFolderPermission('read');
+        if (!allowed) {
+          showBackupReport(t('settings.cloudReadDenied'), 'err');
+          VA.audio?.sfx('error');
+          return;
+        }
+        const st = await VA.storage.cloudFolderStatus();
+        const file = st.fileName || 'athanor-backup.json';
+        const mode = backupMode();
+        const ask = mode === 'replace' ? 'settings.cloudLoadReplaceConfirm' : 'settings.cloudLoadConfirm';
+        if (!window.confirm(fillCloud(ask, { where: cloudWhere(st), file }))) return;
+        const loaded = await VA.storage.readCloudBackup();
+        const data = VA.storage.parseBackup(loaded.text);
+        const report = VA.storage.importBundle(data, mode);
+        const active = currentAnalysis ? VA.schema.normalizeQuery(currentAnalysis.lemma) : '';
+        refreshRails(active);
+        VA.ui.renderGrimSettings();
+        showBackupReport(backupReport(report), 'ok');
+        VA.audio.sfx('ui');
+      } catch (err) {
+        const msg = cloudActionError(err);
+        if (msg) {
+          showBackupReport(msg, 'err');
+          VA.audio?.sfx('error');
+        }
+      } finally {
+        cloudBusy = false;
+        await refreshCloudFolderStatus();
+      }
+    }
+
+    async function unlinkCloudFolder() {
+      if (cloudBusy) return;
+      if (typeof VA.storage.unlinkCloudFolder !== 'function') {
+        showBackupReport(t('settings.cloudStale'), 'err');
+        return;
+      }
+      const st = await VA.storage.cloudFolderStatus().catch(() => null);
+      if (!window.confirm(fillCloud('settings.cloudUnlinkConfirm', { where: cloudWhere(st) }))) return;
+      lockCloudButtons();
+      try {
+        await VA.storage.unlinkCloudFolder();
+        showBackupReport(t('settings.cloudUnlinkedToast'), 'ok');
+        VA.audio.sfx('ui');
+      } catch (err) {
+        const msg = cloudActionError(err);
+        if (msg) {
+          showBackupReport(msg, 'err');
+          VA.audio?.sfx('error');
+        }
+      } finally {
+        cloudBusy = false;
+        await refreshCloudFolderStatus();
+      }
+    }
+
+    document.getElementById('cloud-link')?.addEventListener('click', () => linkCloudFolder());
+    document.getElementById('cloud-sync')?.addEventListener('click', () => syncCloudFolder());
+    document.getElementById('cloud-load')?.addEventListener('click', () => loadCloudFolder());
+    document.getElementById('cloud-unlink')?.addEventListener('click', () => unlinkCloudFolder());
+    refreshCloudFolderStatus();
 
     document.getElementById('ambient-btn').addEventListener('click', () => {
       VA.audio.unlock();
@@ -967,6 +1521,7 @@
       const s = settings();
       VA.ui.fillSettings(s, VA.storage.getApiKey(s.provider));
       VA.ui.openSettings(true);
+      if (!document.getElementById('set-pane-grimoire')?.hidden) refreshCloudFolderStatus();
       VA.audio.sfx('ui');
     });
     document.getElementById('settings-tabs')?.addEventListener('click', (e) => {
@@ -974,7 +1529,10 @@
       if (!btn) return;
       const tab = btn.getAttribute('data-set-tab');
       VA.ui.showSettingsTab(tab);
-      if (tab === 'grimoire') VA.ui.renderGrimSettings();
+      if (tab === 'grimoire') {
+        VA.ui.renderGrimSettings();
+        refreshCloudFolderStatus();
+      }
       VA.audio.sfx('ui');
     });
     document.getElementById('settings-tabs')?.addEventListener('keydown', (e) => {
@@ -986,7 +1544,9 @@
       const next = delta ? (i + delta + tabs.length) % tabs.length : e.key === 'Home' ? 0 : tabs.length - 1;
       if (next === i) return;
       e.preventDefault();
-      VA.ui.showSettingsTab(tabs[next].getAttribute('data-set-tab'));
+      const nextTab = tabs[next].getAttribute('data-set-tab');
+      VA.ui.showSettingsTab(nextTab);
+      if (nextTab === 'grimoire') refreshCloudFolderStatus();
       tabs[next].focus();
       VA.audio.sfx('ui');
     });
@@ -1139,7 +1699,7 @@
   function stashPage(lang) {
     const page = pageOf(lang);
     page.analysis = currentAnalysis;
-    page.idle = !currentAnalysis && !jobs.get(lang);
+    page.idle = !currentAnalysis && workCount(lang) === 0;
     const input = document.getElementById('word-input');
     page.input = input ? input.value : '';
     const status = document.getElementById('status');
@@ -1153,30 +1713,29 @@
   function restorePage(lang) {
     const page = pageOf(lang);
     const p = VA.langs.current();
-    expanding = false;
     currentAnalysis = page.analysis;
     const input = document.getElementById('word-input');
     if (input) input.value = page.input || '';
-    const job = jobs.get(lang);
-    if (job) {
-      VA.ui.setCasting(true);
-      VA.ui.setStatus(page.status || t('status.crystallizing'), page.statusKind || 'busy');
+    const working = workCount(lang) > 0;
+    if (working) {
+      VA.ui.setStatus(page.status || t('status.expanding'), page.statusKind || 'busy');
+    } else if (page.analysis) {
+      VA.ui.setStatus(page.status || t('status.ready'), page.statusKind || 'ok');
     } else {
-      VA.ui.setCasting(false);
-      if (page.analysis) VA.ui.setStatus(page.status || t('status.ready'), page.statusKind || 'ok');
-      else VA.ui.setStatus(`${p.label.zh}爐已就緒 · ${t('cast.hint')}`);
+      VA.ui.setStatus(`${p.label.zh}爐已就緒 · ${t('cast.hint')}`);
     }
     if (page.graph?.nodes?.length) {
       graph.restore(page.graph);
       VA.ui.setIdle(false);
+      refreshChrome(lang);
       const selected = graph.get(graph.selectedId) || graph.all().find((n) => n.type === 'word');
       if (selected) {
-        VA.ui.renderInspector(selected, { expanding: false });
+        paintInspector(selected, lang);
         VA.ui.setSheetOpen(selected.type !== 'word');
       } else {
         VA.ui.renderInspector(page.analysis ? { type: 'word', form: page.analysis.lemma, analysis: page.analysis } : null);
       }
-    } else if (page.analysis && !job) {
+    } else if (page.analysis && !working) {
       paintAnalysis(page.analysis, { lang, persist: false, celebrate: false });
     } else {
       graph.clear();
@@ -1185,13 +1744,13 @@
       VA.ui.setSheetOpen(false);
     }
     refreshRails(currentAnalysis ? VA.schema.normalizeQuery(currentAnalysis.lemma) : '');
+    refreshChrome(lang);
   }
 
   function switchLang(id) {
     if (!id || id === langNow()) return;
     const from = langNow();
     stashPage(from);
-    expanding = false;
     VA.langs.setLang(id);
     applyLangChrome();
     restorePage(id);
@@ -1249,7 +1808,7 @@
       if (tab != null) {
         const s = settings();
         VA.ui.fillSettings(s, VA.storage.getApiKey(s.provider));
-        const id = ['api', 'voice', 'display', 'audio'].includes(tab) ? tab : 'api';
+        const id = ['api', 'voice', 'display', 'audio', 'grimoire'].includes(tab) ? tab : 'api';
         VA.ui.openSettings(true, id);
       }
     } catch {

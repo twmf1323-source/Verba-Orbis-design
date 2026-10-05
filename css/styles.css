@@ -1928,6 +1928,23 @@ input[type='range'] {
   text-align: center;
 }
 
+.backup-actions .icon-btn[hidden],
+.backup-actions .btn-gold[hidden] {
+  display: none !important;
+}
+
+.file-proxy {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  opacity: 0;
+}
+
 #cloud-status {
   overflow-wrap: anywhere;
   margin: 0 0 12px;

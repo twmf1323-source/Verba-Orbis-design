@@ -1259,17 +1259,28 @@
       return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
     }
 
+    function cloudUsesFile(st) {
+      return Boolean(st && (st.mode === 'file' || st.supported === false));
+    }
+
     function setCloudButtons(st) {
-      const supported = Boolean(st && st.supported);
+      const fileMode = cloudUsesFile(st);
+      const supported = Boolean(st && st.supported) && !fileMode;
       const linked = Boolean(st && st.linked);
       const link = document.getElementById('cloud-link');
       const sync = document.getElementById('cloud-sync');
       const load = document.getElementById('cloud-load');
       const unlink = document.getElementById('cloud-unlink');
-      if (link) link.disabled = !supported || cloudBusy;
-      if (sync) sync.disabled = !supported || !linked || cloudBusy;
-      if (load) load.disabled = !supported || !linked || cloudBusy;
-      if (unlink) unlink.disabled = !supported || !linked || cloudBusy;
+      if (link) {
+        link.hidden = fileMode;
+        link.disabled = !supported || cloudBusy;
+      }
+      if (sync) sync.disabled = fileMode ? cloudBusy : (!supported || !linked || cloudBusy);
+      if (load) load.disabled = fileMode ? cloudBusy : (!supported || !linked || cloudBusy);
+      if (unlink) {
+        unlink.hidden = fileMode;
+        unlink.disabled = !supported || !linked || cloudBusy;
+      }
     }
 
     function lockCloudButtons() {
@@ -1290,9 +1301,15 @@
       }
       try {
         const st = await VA.storage.cloudFolderStatus();
-        if (!st.supported) {
-          el.textContent = t('settings.cloudUnsupported');
-        } else if (!st.linked) {
+        const lead = document.getElementById('cloud-lead');
+        if (!st.supported || st.mode === 'file') {
+          if (lead) lead.textContent = t('settings.cloudLeadFile');
+          el.textContent = t('settings.cloudFileMode');
+          setCloudButtons({ ...st, mode: 'file', supported: false });
+          return;
+        }
+        if (lead) lead.textContent = t('settings.cloudLead');
+        if (!st.linked) {
           el.textContent = t('settings.cloudUnlinked');
         } else {
           const name = st.name ? `「${st.name}」` : t('settings.cloudFolderFallback');
@@ -1316,14 +1333,43 @@
       }
     }
 
-    function cloudActionError(err) {
+    function cloudActionError(err, fileMode) {
       if (!err || err.name === 'AbortError' || err.message === '已取消') return '';
       if (err.name === 'SecurityError') {
         const openedAsFile = location.protocol === 'file:' || window.isSecureContext === false;
         return openedAsFile ? t('settings.cloudFile') : t('settings.cloudDenied');
       }
-      if (err.name === 'NotAllowedError') return t('settings.cloudDenied');
+      if (err.name === 'NotAllowedError') return t(fileMode ? 'settings.cloudShareDenied' : 'settings.cloudDenied');
       return err.message || t('settings.cloudFail');
+    }
+
+    function cloudBackupFile() {
+      const name = VA.storage.CLOUD_BACKUP_FILE || 'athanor-backup.json';
+      const file = new File([JSON.stringify(VA.storage.exportBundle(), null, 2)], name, { type: 'application/json' });
+      return { name, file };
+    }
+
+    async function presentCloudFile() {
+      const packed = cloudBackupFile();
+      const payload = { files: [packed.file], title: packed.name };
+      let canShare = typeof navigator.share === 'function';
+      if (canShare && typeof navigator.canShare === 'function') {
+        try {
+          canShare = navigator.canShare(payload);
+        } catch {
+          canShare = false;
+        }
+      }
+      if (canShare) {
+        await navigator.share(payload);
+        return 'shared';
+      }
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(packed.file);
+      link.download = packed.name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1500);
+      return 'downloaded';
     }
 
     function cloudWhere(st) {
@@ -1362,6 +1408,20 @@
         showBackupReport(t('settings.cloudStale'), 'err');
         return;
       }
+      if (typeof VA.storage.cloudFolderSupported === 'function' && !VA.storage.cloudFolderSupported()) {
+        try {
+          const how = await presentCloudFile();
+          showBackupReport(t(how === 'shared' ? 'settings.cloudSharedToast' : 'settings.cloudDownloadedToast'), 'ok');
+          VA.audio.sfx('ui');
+        } catch (err) {
+          const msg = cloudActionError(err, true);
+          if (msg) {
+            showBackupReport(msg, 'err');
+            VA.audio?.sfx('error');
+          }
+        }
+        return;
+      }
       lockCloudButtons();
       try {
         const allowed = await VA.storage.ensureCloudFolderPermission('readwrite');
@@ -1388,10 +1448,32 @@
       }
     }
 
+    function importCloudText(text, opts) {
+      const data = VA.storage.parseBackup(text);
+      const mode = backupMode();
+      if (mode === 'replace' && !(opts && opts.confirmed) && !window.confirm(t('settings.backupReplaceConfirm'))) return;
+      const report = VA.storage.importBundle(data, mode);
+      const active = currentAnalysis ? VA.schema.normalizeQuery(currentAnalysis.lemma) : '';
+      refreshRails(active);
+      VA.ui.renderGrimSettings();
+      showBackupReport(backupReport(report), 'ok');
+      VA.audio.sfx('ui');
+    }
+
     async function loadCloudFolder() {
       if (cloudBusy) return;
       if (typeof VA.storage.readCloudBackup !== 'function') {
         showBackupReport(t('settings.cloudStale'), 'err');
+        return;
+      }
+      if (typeof VA.storage.cloudFolderSupported === 'function' && !VA.storage.cloudFolderSupported()) {
+        const input = document.getElementById('cloud-file');
+        if (!input) {
+          showBackupReport(t('settings.cloudFail'), 'err');
+          return;
+        }
+        input.value = '';
+        input.click();
         return;
       }
       lockCloudButtons();
@@ -1408,13 +1490,7 @@
         const ask = mode === 'replace' ? 'settings.cloudLoadReplaceConfirm' : 'settings.cloudLoadConfirm';
         if (!window.confirm(fillCloud(ask, { where: cloudWhere(st), file }))) return;
         const loaded = await VA.storage.readCloudBackup();
-        const data = VA.storage.parseBackup(loaded.text);
-        const report = VA.storage.importBundle(data, mode);
-        const active = currentAnalysis ? VA.schema.normalizeQuery(currentAnalysis.lemma) : '';
-        refreshRails(active);
-        VA.ui.renderGrimSettings();
-        showBackupReport(backupReport(report), 'ok');
-        VA.audio.sfx('ui');
+        importCloudText(loaded.text, { confirmed: true });
       } catch (err) {
         const msg = cloudActionError(err);
         if (msg) {
@@ -1456,6 +1532,25 @@
     document.getElementById('cloud-sync')?.addEventListener('click', () => syncCloudFolder());
     document.getElementById('cloud-load')?.addEventListener('click', () => loadCloudFolder());
     document.getElementById('cloud-unlink')?.addEventListener('click', () => unlinkCloudFolder());
+    document.getElementById('cloud-file')?.addEventListener('change', () => {
+      const input = document.getElementById('cloud-file');
+      const file = input && input.files && input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          importCloudText(String(reader.result || ''));
+        } catch (err) {
+          showBackupReport(err?.message || t('settings.backupBad'), 'err');
+          VA.audio?.sfx('error');
+        }
+      };
+      reader.onerror = () => {
+        showBackupReport(t('settings.backupBad'), 'err');
+        VA.audio?.sfx('error');
+      };
+      reader.readAsText(file);
+    });
     refreshCloudFolderStatus();
 
     document.getElementById('ambient-btn').addEventListener('click', () => {

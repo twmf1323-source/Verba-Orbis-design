@@ -768,6 +768,7 @@
     }
     return {
       supported,
+      mode: supported ? 'folder' : 'file',
       linked: Boolean(handle),
       name: (handle && handle.name) || meta.name || '',
       permission,

@@ -303,7 +303,7 @@
               </div>
               <div class="field">
                 <label data-i18n="settings.cloudTitle">雲端資料夾</label>
-                <div class="hint" data-i18n="settings.cloudLead">選 Google 雲端硬碟裡已經同步到這台電腦的一個資料夾。同步寫入 athanor-backup.json，內容是全部語言的魔典與藥櫃。金鑰與爐房設定留在這台。兩台電腦要對同一份檔，請選同一個資料夾，等雲端同步完成再載入。請用 Chrome 或 Edge 開本機網址；直接雙擊 HTML 不能記住資料夾。</div>
+                <div class="hint" id="cloud-lead" data-i18n="settings.cloudLead">選 Google 雲端硬碟裡已經同步到這台電腦的一個資料夾。同步寫入 athanor-backup.json，內容是全部語言的魔典與藥櫃。金鑰與爐房設定留在這台。兩台電腦要對同一份檔，請選同一個資料夾，等雲端同步完成再載入。請用 Chrome 或 Edge 開本機網址；直接雙擊 HTML 不能記住資料夾。</div>
               </div>
               <p id="cloud-status" class="hint" role="status" aria-live="polite">正在檢查雲端資料夾…</p>
               <div class="field field-actions backup-actions">
@@ -311,6 +311,7 @@
                 <button type="button" class="btn-gold" id="cloud-sync" data-i18n="settings.cloudSync" disabled>同步到雲端</button>
                 <button type="button" class="icon-btn" id="cloud-load" data-i18n="settings.cloudLoad" disabled>從雲端載入</button>
                 <button type="button" class="icon-btn" id="cloud-unlink" data-i18n="settings.cloudUnlink" disabled>取消連結</button>
+                <input id="cloud-file" class="file-proxy" type="file" accept=".json,application/json,text/plain">
               </div>
               <div class="field" role="radiogroup" data-i18n-aria="settings.backupMode" aria-label="匯入方式">
                 <label class="check-row">
